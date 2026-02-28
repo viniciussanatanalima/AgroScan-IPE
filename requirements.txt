@@ -1,0 +1,20 @@
+# Frontend Dependencies
+streamlit
+folium
+streamlit-folium
+requests
+
+# Backend Cloud Functions Dependencies
+functions-framework
+google-cloud-functions
+google-cloud-storage
+google-cloud-firestore
+earthengine-api
+
+# Email and Utilities
+email-validator
+python-dotenv
+
+# Data Processing
+numpy
+pandas
