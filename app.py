@@ -140,7 +140,7 @@ if activate_button:
         try:
             # Enviar dados para o Cloud Functions
             # NOTA: Substitua URL abaixo pela URL real da sua Cloud Function
-            function_url = "https://us-central1-agroscan-ipe.cloudfunctions.net/agroscan-monitor"
+            function_url = "https://us-central1-agroscan-ipe.cloudfunctions.net/agroscan_monitor"
             
             with st.spinner("🚀 Ativando monitoramento..."):
                 response = requests.post(
