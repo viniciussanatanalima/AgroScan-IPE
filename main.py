@@ -110,7 +110,7 @@ class PrescriptionEngine:
     @staticmethod
     def generate_prescription(data: Dict) -> List[str]:
         p = []
-        if data.get('nbr_mean', 0) < 0.1: p.append("URGENTE: Inspeção de Incêndio/Queimada na área.")
+        if data.get('nbr_mean', 0) < 0.1: p.append("VULNERABILIDADE CRÍTICA: Resposta espectral indica dessecação severa da vegetação. Alto risco de ignição ou degradação de solo.")
         if data.get('ndvi_mean', 0) < 0.4 and data.get('precipitation_sum_7d', 0) > 20: p.append("ALERTA NUTRICIONAL: Baixo vigor com solo úmido.")
         if data.get('vv_mean', 0) < -14 and data.get('precipitation_sum_7d', 0) < 10: p.append("AÇÃO AUTOMATIZADA: Solo seco. Sugestão de irrigação.")
         if not p: p.append("Monitoramento Normal - Sem ações urgentes requeridas.")
