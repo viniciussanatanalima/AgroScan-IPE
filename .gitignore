@@ -1,13 +1,22 @@
-# Arquivos de ambiente e senhas
+# ─── SEGURANÇA E AMBIENTE ───────────────────────────────────
 .env
-*.json
 agroscan-key.json
+credentials.json
 
-# Pastas virtuais do Python
+# ─── PYTHON (BACKEND) ───────────────────────────────────────
 venv/
 __pycache__/
 *.pyc
-
-# Arquivos do Streamlit e Cloud Functions
 .streamlit/
 .gcloudignore
+
+# ─── MOBILE (REACT / CAPACITOR) ─────────────────────────────
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+
+# ─── ANDROID (NATIVO) ───────────────────────────────────────
+agroscan/android/app/build/
+agroscan/android/.gradle/
