@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AgroScan</string>
+    <string name="title_activity_main">AgroScan</string>
+    <string name="package_name">br.edu.ufabc.agroscan</string>
+    <string name="custom_url_scheme">br.edu.ufabc.agroscan</string>
+</resources>
