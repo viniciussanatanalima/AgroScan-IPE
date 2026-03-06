@@ -688,7 +688,7 @@ function RegistrationView({ setView, onRegister }) {
         : "",
     };
 
-    onRegister(newFarm);
+    onRegister(newFarm, fcmToken);  // ← App.handleRegister dispara e captura o fetch
 
     setStatus({
       loading: false,
@@ -697,13 +697,6 @@ function RegistrationView({ setView, onRegister }) {
         : "Cadastro realizado! O relatório chegará no seu e-mail em até 10 minutos.",
       type: "success",
     });
-
-    // Dispara em background — não bloqueia a UI
-    fetch(CLOUD_FUNCTION_URL, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ email, nome_fazenda: farmName.trim(), coordinates: coords, fcm_token: fcmToken }),
-    }).catch(() => {});
 
     setTimeout(() => setView("home"), 3500);
   };
@@ -777,7 +770,7 @@ function GuideView({ setView }) {
         <div style={{ fontFamily: FONTS.mono, fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 2 }}>{page + 1} / {GUIDE_PAGES.length}</div>
         <div style={{ width: 64 }} />
       </div>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", textAlign: "center", paddingTop: 8, paddingBottom: 12 }}>
         <div style={{ fontSize: 54, marginBottom: 16 }}>{cur.emoji}</div>
         <div style={{ fontFamily: FONTS.exo, fontSize: 28, fontWeight: 800, color: "#fff", letterSpacing: 3, textTransform: "uppercase" }}>{cur.title}</div>
         <div style={{ fontFamily: FONTS.mono, fontSize: 9.5, color: cur.accent, letterSpacing: 3, textTransform: "uppercase", margin: "4px 0 14px" }}>{cur.subtitle}</div>
@@ -913,9 +906,40 @@ export default function App() {
   const [logs,  setLogs]  = useState(INITIAL_LOGS);
 
   useEffect(() => {
-    setFarms(loadFromStorage(STORAGE_KEYS.farms, []));
+    const savedFarms = loadFromStorage(STORAGE_KEYS.farms, []);
+    setFarms(savedFarms);
     setLogs(loadFromStorage(STORAGE_KEYS.logs, INITIAL_LOGS));
-    // Registra service worker do FCM
+
+    // Se o app foi fechado enquanto o Earth Engine ainda processava,
+    // tenta recuperar os dados assim que o usuário voltar.
+    const pending = savedFarms[0];
+    const isPending = pending && pending.ndvi == null && pending.nbr == null && pending.rvi == null;
+    if (isPending) {
+      fetch(CLOUD_FUNCTION_URL, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ email: pending.email, nome_fazenda: pending.name, coordinates: pending.coords }),
+      })
+        .then(r => r.json())
+        .then(json => {
+          if (!json?.data) return;
+          const d = json.data;
+          if (d.ndvi_mean == null && d.nbr_mean == null && d.rvi_mean == null) return;
+          setFarms(prev => [{
+            ...prev[0],
+            ndvi:        d.ndvi_mean             ?? prev[0].ndvi,
+            nbr:         d.nbr_mean              ?? prev[0].nbr,
+            rvi:         d.rvi_mean              ?? prev[0].rvi,
+            rain7d:      d.precipitation_sum_7d  ?? prev[0].rain7d,
+            rain30d:     d.precipitation_sum_30d ?? prev[0].rain30d,
+            dataGap:     d.data_gap              ?? false,
+            ndvi_series: d.ndvi_series?.length   ? d.ndvi_series : prev[0].ndvi_series,
+            rvi_series:  d.rvi_series?.length    ? d.rvi_series  : prev[0].rvi_series,
+          }, ...prev.slice(1)]);
+        })
+        .catch(() => {});
+    }
+
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker
         .register("/firebase-messaging-sw.js")
@@ -931,11 +955,38 @@ export default function App() {
     setLogs(prev => [{ id: Date.now(), time, type, text }, ...prev].slice(0, 10));
   }, []);
 
-  const handleRegister = useCallback((farm) => {
+  // Recebe farm (valores null) + fcmToken do RegistrationView.
+  // Salva imediatamente e dispara fetch em background — captura a resposta
+  // para atualizar o estado quando o Earth Engine terminar.
+  const handleRegister = useCallback((farm, fcmToken) => {
     setFarms(prev => [farm, ...prev]);
     addLog(`Fazenda "${farm.name}" cadastrada — monitoramento iniciado`, "success");
     addLog(`Relatório enviado para ${farm.email}`, "info");
     addLog("Processamento Sentinel-2 agendado para próxima janela orbital", "info");
+
+    fetch(CLOUD_FUNCTION_URL, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ email: farm.email, nome_fazenda: farm.name, coordinates: farm.coords, fcm_token: fcmToken }),
+    })
+      .then(r => r.json())
+      .then(json => {
+        if (!json?.data) return;
+        const d = json.data;
+        setFarms(prev => [{
+          ...prev[0],
+          ndvi:        d.ndvi_mean             ?? prev[0].ndvi,
+          nbr:         d.nbr_mean              ?? prev[0].nbr,
+          rvi:         d.rvi_mean              ?? prev[0].rvi,
+          rain7d:      d.precipitation_sum_7d  ?? prev[0].rain7d,
+          rain30d:     d.precipitation_sum_30d ?? prev[0].rain30d,
+          dataGap:     d.data_gap              ?? false,
+          ndvi_series: d.ndvi_series?.length   ? d.ndvi_series : prev[0].ndvi_series,
+          rvi_series:  d.rvi_series?.length    ? d.rvi_series  : prev[0].rvi_series,
+        }, ...prev.slice(1)]);
+        addLog(`Dados orbitais recebidos para "${farm.name}"`, "success");
+      })
+      .catch(() => {});
   }, [addLog]);
 
   return (
