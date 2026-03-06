@@ -86,7 +86,23 @@ const FontLoader = () => {
   return null;
 };
 
-const CLOUD_FUNCTION_URL = "https://us-central1-agroscan-ipe.cloudfunctions.net/agroscan_monitor";
+const CLOUD_FUNCTION_URL    = "https://us-central1-agroscan-ipe.cloudfunctions.net/agroscan_monitor";
+const CLOUD_FUNCTION_STATUS = "https://us-central1-agroscan-ipe.cloudfunctions.net/get_farm_status";
+
+/** Aplica dados do Earth Engine sobre um farm existente no array de state. */
+function applyEEData(prev, d) {
+  return [{
+    ...prev[0],
+    ndvi:        d.ndvi_mean             ?? prev[0].ndvi,
+    nbr:         d.nbr_mean              ?? prev[0].nbr,
+    rvi:         d.rvi_mean              ?? prev[0].rvi,
+    rain7d:      d.precipitation_sum_7d  ?? prev[0].rain7d,
+    rain30d:     d.precipitation_sum_30d ?? prev[0].rain30d,
+    dataGap:     d.data_gap              ?? false,
+    ndvi_series: d.ndvi_series?.length   ? d.ndvi_series : prev[0].ndvi_series,
+    rvi_series:  d.rvi_series?.length    ? d.rvi_series  : prev[0].rvi_series,
+  }, ...prev.slice(1)];
+}
 
 /* ─── FIREBASE FCM ───────────────────────────────────────────────────────── */
 const FCM_CONFIG = {
@@ -910,32 +926,21 @@ export default function App() {
     setFarms(savedFarms);
     setLogs(loadFromStorage(STORAGE_KEYS.logs, INITIAL_LOGS));
 
-    // Se o app foi fechado enquanto o Earth Engine ainda processava,
-    // tenta recuperar os dados assim que o usuário voltar.
-    const pending = savedFarms[0];
-    const isPending = pending && pending.ndvi == null && pending.nbr == null && pending.rvi == null;
+    // Recovery: se o app foi fechado enquanto pending, busca resultado já salvo
+    // via get_farm_status (somente leitura — NÃO cria nova fazenda)
+    const pending   = savedFarms[0];
+    const isPending = pending?.farmId &&
+                      pending.ndvi == null && pending.nbr == null && pending.rvi == null;
     if (isPending) {
-      fetch(CLOUD_FUNCTION_URL, {
+      fetch(CLOUD_FUNCTION_STATUS, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email: pending.email, nome_fazenda: pending.name, coordinates: pending.coords }),
+        body:    JSON.stringify({ farm_id: pending.farmId }),
       })
         .then(r => r.json())
         .then(json => {
-          if (!json?.data) return;
-          const d = json.data;
-          if (d.ndvi_mean == null && d.nbr_mean == null && d.rvi_mean == null) return;
-          setFarms(prev => [{
-            ...prev[0],
-            ndvi:        d.ndvi_mean             ?? prev[0].ndvi,
-            nbr:         d.nbr_mean              ?? prev[0].nbr,
-            rvi:         d.rvi_mean              ?? prev[0].rvi,
-            rain7d:      d.precipitation_sum_7d  ?? prev[0].rain7d,
-            rain30d:     d.precipitation_sum_30d ?? prev[0].rain30d,
-            dataGap:     d.data_gap              ?? false,
-            ndvi_series: d.ndvi_series?.length   ? d.ndvi_series : prev[0].ndvi_series,
-            rvi_series:  d.rvi_series?.length    ? d.rvi_series  : prev[0].rvi_series,
-          }, ...prev.slice(1)]);
+          if (json.status !== "ready" || !json.data) return;
+          setFarms(prev => applyEEData(prev, json.data));
         })
         .catch(() => {});
     }
@@ -972,18 +977,11 @@ export default function App() {
       .then(r => r.json())
       .then(json => {
         if (!json?.data) return;
-        const d = json.data;
-        setFarms(prev => [{
-          ...prev[0],
-          ndvi:        d.ndvi_mean             ?? prev[0].ndvi,
-          nbr:         d.nbr_mean              ?? prev[0].nbr,
-          rvi:         d.rvi_mean              ?? prev[0].rvi,
-          rain7d:      d.precipitation_sum_7d  ?? prev[0].rain7d,
-          rain30d:     d.precipitation_sum_30d ?? prev[0].rain30d,
-          dataGap:     d.data_gap              ?? false,
-          ndvi_series: d.ndvi_series?.length   ? d.ndvi_series : prev[0].ndvi_series,
-          rvi_series:  d.rvi_series?.length    ? d.rvi_series  : prev[0].rvi_series,
-        }, ...prev.slice(1)]);
+        // Salva o farm_id retornado pelo backend para uso no polling e recovery
+        if (json.farm_id) {
+          setFarms(prev => [{ ...prev[0], farmId: json.farm_id }, ...prev.slice(1)]);
+        }
+        setFarms(prev => applyEEData(prev, json.data));
         addLog(`Dados orbitais recebidos para "${farm.name}"`, "success");
       })
       .catch(() => {});
