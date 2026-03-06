@@ -2,13 +2,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 /*
  ╔══════════════════════════════════════════════════════════════╗
- ║  AgroScan v2.2 — APK BUILD                                  ║
- ║  Diferenças em relação à v2.1 (demo web):                   ║
- ║  • Phone frame REMOVIDO — ocupa 100% da tela nativa         ║
- ║  • Safe-area via CSS env() para notch/barra de status       ║
- ║  • Viewport configurado para Capacitor                      ║
- ║  • window.storage substituído por localStorage              ║
- ║    (Capacitor expõe localStorage no WebView Android)        ║
+ ║  AgroScan v2.5 — APK BUILD                                  ║
+ ║  • Dados reais do Earth Engine (sem mock data)              ║
+ ║  • RVI com Z-Score adaptativo — sem limiares arbitrários    ║
+ ║    Z = (último valor − média 30d) / desvio-padrão 30d       ║
+ ║  • Guia: 6 páginas (chuva, NDVI, NBR, RVI, Z-Score)        ║
+ ║  • Cadastro fire-and-forget — UI não bloqueia               ║
+ ║  • FCM push notifications via Firebase                      ║
  ╚══════════════════════════════════════════════════════════════╝
 */
 
@@ -26,7 +26,6 @@ const B = {
   red: "#ef5350", orange: "#fb8c00",
 };
 
-/* ─── STYLE TOKENS ───────────────────────────────────────────────────────── */
 const FONTS = {
   mono: "'Share Tech Mono', monospace",
   exo:  "'Exo 2', sans-serif",
@@ -60,10 +59,8 @@ const S = {
     borderRadius: 12, padding: "12px 14px", color: B.textPrimary, outline: "none",
     fontFamily: FONTS.exo, fontSize: 14, boxSizing: "border-box",
   }),
-  // ✅ v2.2: scrollView usa safe-area para respeitar notch/barra nativa
   scrollView: {
-    height: "100%",
-    overflowY: "auto",
+    height: "100%", overflowY: "auto",
     padding: "calc(env(safe-area-inset-top, 20px) + 16px) 16px calc(env(safe-area-inset-bottom, 16px) + 80px)",
   },
   infoPill: {
@@ -81,9 +78,9 @@ const FontLoader = () => {
   useEffect(() => {
     if (document.getElementById("agro-fonts")) return;
     const l = document.createElement("link");
-    l.id = "agro-fonts";
+    l.id   = "agro-fonts";
     l.href = "https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,700&family=Share+Tech+Mono&display=swap";
-    l.rel = "stylesheet";
+    l.rel  = "stylesheet";
     document.head.appendChild(l);
   }, []);
   return null;
@@ -91,89 +88,144 @@ const FontLoader = () => {
 
 const CLOUD_FUNCTION_URL = "https://us-central1-agroscan-ipe.cloudfunctions.net/agroscan_monitor";
 
+/* ─── FIREBASE FCM ───────────────────────────────────────────────────────── */
+const FCM_CONFIG = {
+  apiKey:            "AIzaSyCFntZkmW9c4YE7u5RmPyhnE2QZecBYKZQ",
+  authDomain:        "agroscan-ipe.firebaseapp.com",
+  projectId:         "agroscan-ipe",
+  storageBucket:     "agroscan-ipe.firebasestorage.app",
+  messagingSenderId: "872758401279",
+  appId:             "1:872758401279:web:cc6db945851c665d9b14ca",
+};
+const FCM_VAPID_KEY = "BLcVrfOnXqqxwrTImn8hic7jPSxXMjqF-7_Pg1TICC3HhK85Zo2LJm5_VY1ulgfQWfBUMj-MZE7VyDsZJWgIkuE";
+
+async function getFCMToken() {
+  try {
+    if (!("Notification" in window)) return null;
+    if (!window.firebase?.messaging) {
+      await new Promise(r => { const s = document.createElement("script"); s.src = "https://www.gstatic.com/firebasejs/10.0.0/firebase-app-compat.js"; s.onload = r; document.head.appendChild(s); });
+      await new Promise(r => { const s = document.createElement("script"); s.src = "https://www.gstatic.com/firebasejs/10.0.0/firebase-messaging-compat.js"; s.onload = r; document.head.appendChild(s); });
+      if (!window.firebase.apps.length) window.firebase.initializeApp(FCM_CONFIG);
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return null;
+    const token = await window.firebase.messaging().getToken({ vapidKey: FCM_VAPID_KEY });
+    return token || null;
+  } catch (err) {
+    console.warn("FCM indisponível:", err);
+    return null;
+  }
+}
+
+/* ─── INITIAL STATE ──────────────────────────────────────────────────────── */
 const INITIAL_LOGS = [
-  { id: 1, time: "06:12", type: "success", text: "Processamento Sentinel-2 concluído" },
-  { id: 2, time: "06:08", type: "info",    text: "CHIRPS: coleta de precipitação OK" },
-  { id: 3, time: "05:55", type: "warning", text: "Cobertura de nuvens 28% — limiar atingido" },
-  { id: 4, time: "05:40", type: "success", text: "Sentinel-1 Radar — RVI processado" },
-  { id: 5, time: "00:00", type: "info",    text: "Varredura global — Cloud Scheduler ativado" },
+  { id: Date.now(), time: "00:00", type: "info", text: "Sistema iniciado. Aguardando cadastro de fazenda." },
 ];
 
+/* ─── GUIDE PAGES (6 páginas) ────────────────────────────────────────────── */
 const GUIDE_PAGES = [
   {
     id: "intro", title: "Manual AgroScan", subtitle: "Satélites a serviço do campo",
     grad: ["#050d1a", "#0a1e3a"], accent: B.teal, emoji: "🛰️",
-    content: "O AgroScan combina dados da NASA e da ESA para entregar inteligência orbital diariamente. Três fontes de satélite garantem diagnóstico preciso independente das condições climáticas.",
-    tip: "Dados atualizados diariamente às 06h — horário de Brasília",
+    content: "O AgroScan combina dados de radar, óptico e meteorológico de 5 satélites diferentes para gerar um diagnóstico completo da sua propriedade. Tudo processado automaticamente no Google Cloud, sem nenhuma instalação.",
+    tip: "Você recebe um relatório diário por e-mail e uma notificação push assim que a análise terminar.",
+  },
+  {
+    id: "chuva", title: "Precipitação", subtitle: "Fusão de 3 Fontes Satelitais",
+    grad: ["#001a2e", "#002e4a"], accent: B.teal, emoji: "🌧️",
+    content: "Os dados de chuva combinam 3 fontes para cobrir os últimos 30 dias sem lacunas: CHIRPS (NASA/UCSB) cobre t-30 a t-5 dias com resolução de 5 km. ERA5-Land (ECMWF) cobre t-5 a t-2 dias. GPM IMERG (NASA) cobre as últimas 48h com latência de apenas 6 horas.",
+    ranges: [
+      { label: "> 20mm / 7d",  status: "Solo Úmido",             color: B.teal   },
+      { label: "5–20mm / 7d",  status: "Precipitação Moderada",  color: B.green  },
+      { label: "< 5mm / 7d",   status: "Atenção à Seca",         color: B.orange },
+    ],
+    tip: "O símbolo * ao lado do valor (ex: 12mm*) indica lacuna em algum segmento — o número é estimativa parcial.",
   },
   {
     id: "ndvi", title: "NDVI", subtitle: "Vigor Vegetativo",
     grad: ["#061a0d", "#0b2e14"], accent: B.green, emoji: "🌿",
-    content: "Calculado com bandas infravermelho (B8) e vermelho (B4) do Sentinel-2. É o termômetro da sua lavoura — detecta estresse antes que seja visível a olho nu.",
+    content: "Calculado com bandas infravermelho (B8) e vermelho (B4) do Sentinel-2. É o termômetro da sua lavoura — detecta estresse na atividade fotossintética antes que seja visível a olho nu.",
     ranges: [
-      { label: "> 0.6", status: "Excelente", color: B.green },
-      { label: "0.4–0.6", status: "Atenção",   color: B.orange },
-      { label: "< 0.4", status: "Crítico",    color: B.red },
+      { label: "≥ 0.40", status: "Monitoramento Normal",  color: B.green  },
+      { label: "< 0.40", status: "Alerta de Baixo Vigor", color: B.orange },
     ],
-    tip: "Verifique adubação e pragas quando NDVI < 0.4 com solo úmido",
+    tip: "Alerta acionado: NDVI < 0.4 combinado com chuvas recentes indica provável estresse nutricional ou ataque de pragas.",
   },
   {
-    id: "nbr", title: "NBR", subtitle: "Risco de Incêndio",
+    id: "nbr", title: "NBR", subtitle: "Risco de Degradação",
     grad: ["#1a0900", "#2e1400"], accent: B.orange, emoji: "🔥",
-    content: "Usa bandas NIR (B8) e SWIR (B12). Valores baixos indicam vegetação seca e vulnerável. Monitore aceiros e ative protocolos preventivos.",
+    content: "Usa bandas NIR (B8) e SWIR (B12) do Sentinel-2. Avalia o teor de umidade da vegetação. Valores muito baixos são gatilhos para risco de fogo ou seca severa.",
     ranges: [
-      { label: "> 0.3", status: "Seguro",         color: B.green },
-      { label: "0.1–0.3", status: "Vigilância",   color: B.orange },
-      { label: "< 0.1", status: "Perigo crítico", color: B.red },
+      { label: "≥ 0.10", status: "Umidade Segura",         color: B.green },
+      { label: "< 0.10", status: "Vulnerabilidade Crítica", color: B.red   },
     ],
-    tip: "NBR < 0.1 → Limpe aceiros e notifique a Defesa Civil imediatamente",
+    tip: "Alerta acionado: NBR < 0.1 dispara aviso imediato de dessecação severa da vegetação.",
   },
   {
-    id: "rvi", title: "RVI", subtitle: "Radar através das nuvens",
+    id: "rvi", title: "RVI", subtitle: "Radar de Vegetação",
     grad: ["#030c1f", "#071a38"], accent: B.teal, emoji: "📡",
-    content: "Radar Sentinel-1 (VV e VH). Atravessa nuvens e chuva para medir estrutura da planta e umidade do solo — essencial na época chuvosa.",
+    content: "O RVI (Radar Vegetation Index) usa o radar SAR do Sentinel-1 para medir a densidade e estrutura da vegetação através das nuvens e à noite. Combina as polarizações VV (vertical-vertical) e VH (vertical-horizontal): quanto mais biomassa e folhagem, maior o espalhamento VH e maior o RVI.",
     ranges: [
-      { label: "> 0.5", status: "Solo úmido", color: B.teal },
-      { label: "0.2–0.5", status: "Adequado", color: B.green },
-      { label: "< 0.2", status: "Irrigar",    color: B.orange },
+      { label: "RVI próximo de 1", status: "Vegetação Densa",     color: B.green  },
+      { label: "RVI próximo de 0", status: "Solo Exposto / Seco", color: B.orange },
     ],
-    tip: "Quando satélites ópticos falham por nuvens, o radar ainda funciona",
+    tip: "O radar penetra nuvens e funciona de noite — ideal para regiões tropicais onde o Sentinel-2 frequentemente encontra cobertura de nuvens.",
+  },
+  {
+    id: "zscore", title: "Z-Score RVI", subtitle: "Anomalia Radar Adaptativa",
+    grad: ["#030c1f", "#071a38"], accent: B.teal, emoji: "📊",
+    content: "O Z-Score compara o RVI atual com o histórico dos últimos 30 dias da sua própria fazenda. Z = (valor atual − média) ÷ desvio-padrão. Isso elimina limiares fixos: o sistema aprende o comportamento normal de cada propriedade individualmente.",
+    ranges: [
+      { label: "Z > −1.0", status: "Normal",         color: B.teal   },
+      { label: "Z < −1.0", status: "Atenção",        color: B.orange },
+      { label: "Z < −1.5", status: "Anomalia Radar", color: B.red    },
+    ],
+    tip: "Uma fazenda com pastagem naturalmente esparsa nunca será alertada pelo mesmo limiar de uma lavoura densa — cada propriedade tem sua própria linha de base.",
   },
 ];
 
-/* ─── PERSISTÊNCIA (localStorage — funciona no WebView do Capacitor) ─────── */
+/* ─── PERSISTÊNCIA ───────────────────────────────────────────────────────── */
 const STORAGE_KEYS = { farms: "agroscan:farms", logs: "agroscan:logs" };
 
 function loadFromStorage(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
+  catch { return fallback; }
+}
+function saveToStorage(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); }
+  catch (e) { console.warn("Storage error:", e); }
 }
 
-function saveToStorage(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.warn("Storage error:", e);
-  }
+/* ─── Z-SCORE ────────────────────────────────────────────────────────────── */
+function calcZScore(series) {
+  if (!series || series.length < 2) return null;
+  const mean = series.reduce((a, b) => a + b, 0) / series.length;
+  const std  = Math.sqrt(series.reduce((s, v) => s + (v - mean) ** 2, 0) / series.length);
+  if (std === 0) return 0;
+  return (series[series.length - 1] - mean) / std;
 }
 
 /* ─── HELPERS ────────────────────────────────────────────────────────────── */
 function getAlertLevel(farm) {
   if (!farm) return null;
-  const { ndvi = 1, nbr = 1, vv = 0 } = farm;
+  const semDados  = farm.ndvi == null && farm.nbr == null && farm.rvi == null;
+  const todosZero = farm.ndvi === 0   && farm.nbr === 0   && farm.rvi === 0;
+  if (semDados || todosZero) return "pending";
+
+  const nbr  = farm.nbr  ?? 1;
+  const ndvi = farm.ndvi ?? 1;
+  const rviZ = calcZScore(farm.rvi_series);
+
   if (nbr < 0.1 || ndvi < 0.3) return "red";
-  if (ndvi < 0.4 || vv < -14)  return "orange";
+  if (ndvi < 0.4 || (rviZ !== null && rviZ < -1.5)) return "orange";
   return "green";
 }
 
 const ALERT_CFG = {
-  green:  { bg: "rgba(61,184,92,0.09)",  border: "#3db85c", dot: "#3db85c", label: "Normal"  },
-  orange: { bg: "rgba(251,140,0,0.10)",  border: "#fb8c00", dot: "#fb8c00", label: "Atenção" },
-  red:    { bg: "rgba(239,83,80,0.10)",  border: "#ef5350", dot: "#ef5350", label: "Crítico" },
+  green:   { bg: "rgba(61,184,92,0.09)",  border: "#3db85c", dot: "#3db85c", label: "Normal"      },
+  orange:  { bg: "rgba(251,140,0,0.10)",  border: "#fb8c00", dot: "#fb8c00", label: "Atenção"     },
+  red:     { bg: "rgba(239,83,80,0.10)",  border: "#ef5350", dot: "#ef5350", label: "Crítico"     },
+  pending: { bg: "rgba(0,180,216,0.06)",  border: "#007a9a", dot: "#007a9a", label: "Processando" },
 };
 
 /* ─── UI ATOMS ───────────────────────────────────────────────────────────── */
@@ -196,13 +248,18 @@ function AlertBadge({ level }) {
   );
 }
 
-function Metric({ label, value, color }) {
+function Metric({ label, value, sub, color }) {
   return (
     <div style={S.metric}>
       <div style={{ ...S.monoXs, letterSpacing: 1.8, textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
       <div style={{ fontFamily: FONTS.mono, fontSize: 17, color: color || B.teal }}>
-        {typeof value === "number" ? value.toFixed(3) : value}
+        {typeof value === "number" ? value.toFixed(3) : "—"}
       </div>
+      {sub && (
+        <div style={{ fontFamily: FONTS.mono, fontSize: 8, color: color || B.textMuted, marginTop: 2, letterSpacing: 0.5 }}>
+          {sub}
+        </div>
+      )}
     </div>
   );
 }
@@ -244,9 +301,9 @@ function OrbitDeco({ opacity = 0.05 }) {
 function LeafletMap({ onPolygonDrawn, drawnCoords }) {
   const mapRef         = useRef(null);
   const mapInstanceRef = useRef(null);
-  const [drawMode, setDrawMode]   = useState(false);
-  const [count, setCount]         = useState(drawnCoords?.length || 0);
-  const [layerMode, setLayerMode] = useState("sat");
+  const [drawMode,   setDrawMode]   = useState(false);
+  const [count,      setCount]      = useState(drawnCoords?.length || 0);
+  const [layerMode,  setLayerMode]  = useState("sat");
   const polyRef  = useRef(null);
   const pts      = useRef([]);
   const markers  = useRef([]);
@@ -265,7 +322,7 @@ function LeafletMap({ onPolygonDrawn, drawnCoords }) {
         s.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
         s.onload = r; document.head.appendChild(s);
       });
-      const L = window.L;
+      const L   = window.L;
       const map = L.map(mapRef.current, { zoomControl: false }).setView([-14.235, -51.925], 4);
       const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { attribution: "© Esri" });
       const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OSM" });
@@ -369,16 +426,113 @@ function LeafletMap({ onPolygonDrawn, drawnCoords }) {
   );
 }
 
+/* ─── SPARKLINE CHART ────────────────────────────────────────────────────── */
+function SparklineChart({ data, color = "#00b4d8", label = "EVOLUÇÃO (30D)" }) {
+  if (!data || data.length < 2) return (
+    <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ fontSize: 8, color: B.textSub, fontFamily: FONTS.mono, letterSpacing: 1.5 }}>{label}</div>
+        <div style={{ fontSize: 8, color: B.textMuted, fontFamily: FONTS.mono }}>AGUARDANDO DADOS</div>
+      </div>
+      <div style={{ height: 40, background: "rgba(255,255,255,0.02)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontSize: 9, color: B.textMuted, fontFamily: FONTS.mono, letterSpacing: 1 }}>Série temporal indisponível</span>
+      </div>
+    </div>
+  );
+
+  const windowSize = 3;
+  const smoothed   = data.map((val, idx, arr) => {
+    const start  = Math.max(0, idx - windowSize + 1);
+    const subset = arr.slice(start, idx + 1);
+    return subset.reduce((a, b) => a + b, 0) / subset.length;
+  });
+
+  const min    = Math.min(...smoothed);
+  const max    = Math.max(...smoothed);
+  const range  = max - min || 1;
+  const width  = 280;
+  const height = 40;
+
+  const points = smoothed.map((v, i) => {
+    const x = (i / (smoothed.length - 1)) * width;
+    const y = height - ((v - min) / range) * height;
+    return `${x},${y}`;
+  }).join(" ");
+
+  const lastVal = smoothed[smoothed.length - 1];
+  const lastY   = height - ((lastVal - min) / range) * height;
+
+  return (
+    <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+        <div style={{ fontSize: 8, color: B.textSub, fontFamily: FONTS.mono, letterSpacing: 1.5 }}>{label}</div>
+        <div style={{ fontSize: 8, color, fontFamily: FONTS.mono, letterSpacing: 1 }}>FILTRO SMA-3</div>
+      </div>
+      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ overflow: "visible" }}>
+        <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round"
+          points={points} style={{ filter: `drop-shadow(0 0 3px ${color}80)` }} />
+        <circle cx={width} cy={lastY} r="3" fill={color}
+          style={{ filter: `drop-shadow(0 0 4px ${color})` }} />
+      </svg>
+    </div>
+  );
+}
+
 /* ─── HOME ───────────────────────────────────────────────────────────────── */
-function HomeView({ setView, farms, logs }) {
+function HomeView({ setView, farms, logs, setFarms }) {
   const farm  = farms[0] || null;
   const alert = getAlertLevel(farm);
-  
-  // NOVO: Estado para controlar se o painel de notificações está aberto ou fechado
   const [showNotifs, setShowNotifs] = useState(false);
+
+  const rviZ     = farm ? calcZScore(farm.rvi_series) : null;
+  const rviColor = rviZ === null ? B.teal : rviZ < -1.5 ? B.red : rviZ < -1.0 ? B.orange : B.teal;
+  const rviSub   = rviZ !== null ? `Z=${rviZ.toFixed(2)}` : null;
+
+  // Polling: tenta recarregar dados a cada 45s enquanto status = "pending"
+  useEffect(() => {
+    if (!farm || getAlertLevel(farm) !== "pending") return;
+
+    let attempts = 0;
+    const MAX    = 13; // ~10 min
+
+    const poll = setInterval(async () => {
+      attempts++;
+      if (attempts > MAX) { clearInterval(poll); return; }
+
+      try {
+        const res  = await fetch(CLOUD_FUNCTION_URL, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ email: farm.email, nome_fazenda: farm.name, coordinates: farm.coords }),
+        });
+        const json = await res.json();
+        if (!res.ok || json.error) return;
+
+        const d = json.data || {};
+        if (d.ndvi_mean == null && d.nbr_mean == null && d.rvi_mean == null) return;
+
+        setFarms(prev => [{
+          ...prev[0],
+          ndvi:        d.ndvi_mean             ?? prev[0].ndvi,
+          nbr:         d.nbr_mean              ?? prev[0].nbr,
+          rvi:         d.rvi_mean              ?? prev[0].rvi,
+          rain7d:      d.precipitation_sum_7d  ?? prev[0].rain7d,
+          rain30d:     d.precipitation_sum_30d ?? prev[0].rain30d,
+          dataGap:     d.data_gap              ?? false,
+          ndvi_series: d.ndvi_series?.length   ? d.ndvi_series : prev[0].ndvi_series,
+          rvi_series:  d.rvi_series?.length    ? d.rvi_series  : prev[0].rvi_series,
+        }, ...prev.slice(1)]);
+
+        clearInterval(poll);
+      } catch { /* silencia erros de rede */ }
+    }, 45_000);
+
+    return () => clearInterval(poll);
+  }, [farm?.name]);
 
   return (
     <div style={S.scrollView}>
+      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Logo size={36} />
@@ -387,34 +541,20 @@ function HomeView({ setView, farms, logs }) {
             <div style={{ fontFamily: FONTS.mono, fontSize: 8, color: B.teal, letterSpacing: 2.5 }}>PAINEL DE CONTROLE</div>
           </div>
         </div>
-        
-        {/* ÁREA DO SINO ATUALIZADA */}
         <div style={{ position: "relative" }}>
-          <div 
-            onClick={() => setShowNotifs(!showNotifs)}
-            style={{ 
-              background: showNotifs ? B.surfaceHi : B.surface, 
-              border: `1px solid ${showNotifs ? B.teal : B.border}`, 
-              borderRadius: 12, width: 40, height: 40, display: "flex", 
-              alignItems: "center", justifyContent: "center", cursor: "pointer", 
-              fontSize: 17, transition: "all 0.2s" 
-            }}>
-            🔔
-          </div>
+          <div onClick={() => setShowNotifs(!showNotifs)} style={{
+            background: showNotifs ? B.surfaceHi : B.surface,
+            border: `1px solid ${showNotifs ? B.teal : B.border}`,
+            borderRadius: 12, width: 40, height: 40, display: "flex",
+            alignItems: "center", justifyContent: "center", cursor: "pointer",
+            fontSize: 17, transition: "all 0.2s",
+          }}>🔔</div>
           {alert === "red" && <div style={{ position: "absolute", top: -3, right: -3, width: 11, height: 11, background: B.red, borderRadius: "50%", border: "2px solid " + B.bg0, animation: "agropulse 1.2s ease-in-out infinite", pointerEvents: "none" }} />}
-          
-          {/* MENU SUSPENSO DE NOTIFICAÇÕES */}
           {showNotifs && (
-            <div style={{
-              position: "absolute", top: 50, right: 0, width: 260, background: B.surfaceHi,
-              border: `1px solid ${B.borderHi}`, borderRadius: 14, padding: 14, zIndex: 1000,
-              boxShadow: `0 10px 40px rgba(0,0,0,0.8)`
-            }}>
-              <div style={{ fontSize: 11, color: B.textPrimary, fontFamily: FONTS.exo, fontWeight: 700, marginBottom: 10, borderBottom: `1px solid ${B.border}`, paddingBottom: 8 }}>
-                Últimas Notificações
-              </div>
+            <div style={{ position: "absolute", top: 50, right: 0, width: 260, background: B.surfaceHi, border: `1px solid ${B.borderHi}`, borderRadius: 14, padding: 14, zIndex: 1000, boxShadow: "0 10px 40px rgba(0,0,0,0.8)" }}>
+              <div style={{ fontSize: 11, color: B.textPrimary, fontFamily: FONTS.exo, fontWeight: 700, marginBottom: 10, borderBottom: `1px solid ${B.border}`, paddingBottom: 8 }}>Últimas Notificações</div>
               {logs.slice(0, 3).map(log => (
-                <div key={log.id} style={{ marginBottom: 10, borderBottom: `1px solid rgba(255,255,255,0.03)`, paddingBottom: 8 }}>
+                <div key={log.id} style={{ marginBottom: 10, borderBottom: "1px solid rgba(255,255,255,0.03)", paddingBottom: 8 }}>
                   <div style={{ fontSize: 9, color: B.teal, fontFamily: FONTS.mono, marginBottom: 2 }}>{log.time}</div>
                   <div style={{ fontSize: 11, color: B.textSub, fontFamily: FONTS.exo, lineHeight: 1.4 }}>{log.text}</div>
                 </div>
@@ -425,6 +565,7 @@ function HomeView({ setView, farms, logs }) {
         </div>
       </div>
 
+      {/* Farm card */}
       {farm ? (
         <div style={{ background: `linear-gradient(145deg, ${B.surface}, ${B.surfaceHi})`, border: "1px solid " + B.borderHi, borderTop: "2px solid " + B.teal, borderRadius: 18, padding: 18, marginBottom: 14, position: "relative", overflow: "hidden" }}>
           <OrbitDeco />
@@ -436,18 +577,41 @@ function HomeView({ setView, farms, logs }) {
                 <div style={{ fontFamily: FONTS.exo, fontSize: 20, fontWeight: 800, color: B.textPrimary }}>{farm.name}</div>
                 <div style={{ fontSize: 9.5, color: B.textMuted, fontFamily: FONTS.mono, marginTop: 2 }}>📍 {farm.lastCoord}</div>
               </div>
-              <AlertBadge level={alert} />
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                <AlertBadge level={alert} />
+                {alert === "pending" && (
+                  <div style={{
+                    padding: "7px 10px", background: "rgba(0,180,216,0.06)",
+                    border: "1px solid #007a9a44", borderRadius: 10,
+                    fontSize: 9.5, color: B.textMuted, fontFamily: FONTS.exo, lineHeight: 1.6, textAlign: "right",
+                  }}>
+                    ⏳ Earth Engine processando.<br/>
+                    <b style={{ color: B.teal }}>Notificação em até 10 min.</b>
+                  </div>
+                )}
+              </div>
             </div>
+
             <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
               <Metric label="NDVI" value={farm.ndvi} color={farm.ndvi >= 0.6 ? B.green : farm.ndvi >= 0.4 ? B.orange : B.red} />
               <Metric label="NBR"  value={farm.nbr}  color={farm.nbr  >= 0.3 ? B.green : farm.nbr  >= 0.1 ? B.orange : B.red} />
-              <Metric label="RVI"  value={farm.rvi}  color={B.teal} />
+              <Metric label="RVI"  value={farm.rvi}  color={rviColor} sub={rviSub} />
             </div>
+
             <div style={S.infoPill}>
-              {[["🌧 7d", farm.rain7d + "mm"], ["30d", farm.rain30d + "mm"], ["📡 Status", "Online"]].map(([k, v]) => (
-                <span key={k} style={{ fontSize: 10, color: B.textSub, fontFamily: FONTS.mono }}>{k}: <b style={{ color: B.teal }}>{v}</b></span>
+              {[
+                ["🌧 7d",     farm.rain7d  != null ? `${farm.rain7d}${farm.dataGap  ? "mm*" : "mm"}` : "—"],
+                ["30d",       farm.rain30d != null ? `${farm.rain30d}${farm.dataGap ? "mm*" : "mm"}` : "—"],
+                ["📡 Status", "Online"],
+              ].map(([k, v]) => (
+                <span key={k} style={{ fontSize: 10, color: B.textSub, fontFamily: FONTS.mono }}>
+                  {k}: <b style={{ color: B.teal }}>{v}</b>
+                </span>
               ))}
             </div>
+
+            <SparklineChart data={farm.ndvi_series} color={B.green} label="NDVI — EVOLUÇÃO (30D)" />
+            <SparklineChart data={farm.rvi_series}  color={B.teal}  label="RVI — EVOLUÇÃO (30D)"  />
           </div>
         </div>
       ) : (
@@ -459,6 +623,7 @@ function HomeView({ setView, farms, logs }) {
         </div>
       )}
 
+      {/* Quick actions */}
       <div style={S.sectionLabel}>AÇÕES RÁPIDAS</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
         {[
@@ -474,6 +639,7 @@ function HomeView({ setView, farms, logs }) {
         ))}
       </div>
 
+      {/* Activity log */}
       <div style={S.sectionLabel}>LOG DE ATIVIDADES</div>
       <div style={S.card}>
         {logs.slice(0, 10).map((log, i) => {
@@ -503,63 +669,49 @@ function RegistrationView({ setView, onRegister }) {
   const allValid = validateEmail(email) && farmName.trim().length > 0 && coords.length >= 3 && !status.loading;
 
   const handleRegister = async () => {
-    // 1. Validações Iniciais
-    if (!validateEmail(email)) { 
-      setEmailErr("Formato de e-mail inválido"); 
-      return; 
-    }
-    if (!farmName.trim() || coords.length < 3) { 
-      setStatus({ loading: false, message: "Preencha todos os campos e desenhe o polígono.", type: "error" }); 
-      return; 
+    if (!validateEmail(email)) { setEmailErr("Formato de e-mail inválido"); return; }
+    if (!farmName.trim() || coords.length < 3) {
+      setStatus({ loading: false, message: "Preencha todos os campos e desenhe o polígono.", type: "error" });
+      return;
     }
 
-    setStatus({ loading: true, message: "A ligar ao servidor orbital...", type: "" });
+    setStatus({ loading: true, message: "Solicitando permissão de notificações...", type: "" });
+    const fcmToken = await getFCMToken();
 
-    try {
-      // 2. Chamada para a Cloud Function
-      const res = await fetch(CLOUD_FUNCTION_URL, { 
-        method: "POST", 
-        headers: { "Content-Type": "application/json" }, 
-        body: JSON.stringify({ 
-          email, 
-          nome_fazenda: farmName.trim(), 
-          coordinates: coords, 
-          data_ativacao: new Date().toISOString(), 
-          project_id: "agroscan-ipe" 
-        }) 
-      });
-      
-      // 3. Verificação de Sucesso do Servidor
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || `Erro ${res.status}: Falha no processamento`);
-      }
+    const newFarm = {
+      name: farmName.trim(), email, coords,
+      ndvi: null, nbr: null, rvi: null, vv: null,
+      rain7d: null, rain30d: null, dataGap: false,
+      ndvi_series: [], rvi_series: [],
+      lastCoord: coords[0]
+        ? `${Math.abs(coords[0][1]).toFixed(4)}°S, ${Math.abs(coords[0][0]).toFixed(4)}°W`
+        : "",
+    };
 
-      // 4. Se chegou aqui, o e-mail deve ter sido disparado com sucesso
-      const newFarm = {
-        name: farmName.trim(), email, coords, ndvi: 0.71, nbr: 0.34, rvi: 0.42, vv: -11, rain7d: 22.4, rain30d: 85.1,
-        lastCoord: coords[0] ? `${Math.abs(coords[0][1]).toFixed(4)}°S, ${Math.abs(coords[0][0]).toFixed(4)}°W` : "14.2350°S, 51.9253°W",
-      };
+    onRegister(newFarm);
 
-      setStatus({ loading: false, message: "Monitorização ativada! Relatório em até 24h.", type: "success" });
-      onRegister(newFarm);
-      setTimeout(() => setView("home"), 2800);
+    setStatus({
+      loading: false,
+      message: fcmToken
+        ? "Cadastro realizado! Você receberá uma notificação push quando os dados estiverem prontos."
+        : "Cadastro realizado! O relatório chegará no seu e-mail em até 10 minutos.",
+      type: "success",
+    });
 
-    } catch (err) {
-      // 5. EXIBIÇÃO DO ERRO REAL NO APK
-      setStatus({ 
-        loading: false, 
-        message: `Falha: ${err.message}`, 
-        type: "error" 
-      });
-      console.error("Erro no registro:", err);
-    }
+    // Dispara em background — não bloqueia a UI
+    fetch(CLOUD_FUNCTION_URL, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ email, nome_fazenda: farmName.trim(), coordinates: coords, fcm_token: fcmToken }),
+    }).catch(() => {});
+
+    setTimeout(() => setView("home"), 3500);
   };
 
   const statusColors = {
-    success: { bg: B.greenGlow,  border: B.green, color: B.green, icon: "✓" },
-    error:   { bg: "rgba(239,83,80,0.1)", border: B.red, color: B.red, icon: "⚠" },
-    loading: { bg: B.tealGlow2,  border: B.teal,  color: B.teal, icon: "⏳" },
+    success: { bg: B.greenGlow,                      border: B.green, color: B.green, icon: "✓" },
+    error:   { bg: "rgba(239,83,80,0.1)",             border: B.red,   color: B.red,   icon: "⚠" },
+    loading: { bg: B.tealGlow2,                       border: B.teal,  color: B.teal,  icon: "⏳" },
   };
   const sc = statusColors[status.type || (status.loading ? "loading" : "error")];
 
@@ -575,7 +727,7 @@ function RegistrationView({ setView, onRegister }) {
 
       {[
         { lbl: "E-MAIL PARA ALERTAS *", ph: "produtor@fazenda.com.br", val: email,    set: v => { setEmail(v); setEmailErr(""); }, type: "email", err: emailErr },
-        { lbl: "NOME DA PROPRIEDADE *", ph: "Ex: Fazenda Santa Fé",    val: farmName, set: setFarmName, type: "text",  err: "" },
+        { lbl: "NOME DA PROPRIEDADE *", ph: "Ex: Fazenda Santa Fé",    val: farmName, set: setFarmName, type: "text", err: "" },
       ].map(f => (
         <div key={f.lbl} style={{ marginBottom: 14 }}>
           <label style={S.label}>{f.lbl}</label>
@@ -647,7 +799,10 @@ function GuideView({ setView }) {
         </div>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20 }}>
-        {[{ show: page > 0, label: "←", onClick: () => setPage(p => p - 1) }, { show: page < GUIDE_PAGES.length - 1, label: "→", onClick: () => setPage(p => p + 1) }].map((btn, bi) => (
+        {[
+          { show: page > 0,                      label: "←", onClick: () => setPage(p => p - 1) },
+          { show: page < GUIDE_PAGES.length - 1, label: "→", onClick: () => setPage(p => p + 1) },
+        ].map((btn, bi) => (
           <button key={bi} onClick={btn.onClick} disabled={!btn.show} style={{ background: btn.show ? "rgba(255,255,255,0.1)" : "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "10px 18px", color: btn.show ? "#fff" : "transparent", cursor: btn.show ? "pointer" : "default", fontSize: 16 }}>{btn.label}</button>
         ))}
         <div style={{ display: "flex", gap: 6 }}>
@@ -662,7 +817,7 @@ function GuideView({ setView }) {
 
 /* ─── SETTINGS ───────────────────────────────────────────────────────────── */
 function SettingsView({ farms }) {
-  const farm = farms[0];
+  const farm    = farms[0];
   const InfoCard = ({ rows }) => (
     <div style={S.card}>
       {rows.map((r, i) => (
@@ -673,6 +828,7 @@ function SettingsView({ farms }) {
       ))}
     </div>
   );
+
   return (
     <div style={S.scrollView}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
@@ -681,34 +837,40 @@ function SettingsView({ farms }) {
       </div>
       <div style={S.sectionLabel}>CONTA</div>
       <InfoCard rows={[
-        { label: "E-mail", value: farm?.email || "—" },
-        { label: "Propriedade", value: farm?.name || "—" },
-        { label: "Status", value: farm ? "Ativo" : "Sem cadastro", color: farm ? B.green : B.textMuted },
+        { label: "E-mail",       value: farm?.email || "—" },
+        { label: "Propriedade",  value: farm?.name  || "—" },
+        { label: "Status",       value: farm ? "Ativo" : "Sem cadastro", color: farm ? B.green : B.textMuted },
       ]} />
       <div style={S.sectionLabel}>SATÉLITES & FONTES</div>
       <InfoCard rows={[
-        { label: "🛰 Sentinel-2", value: "Óptico · ESA Copernicus", color: B.green },
-        { label: "📡 Sentinel-1", value: "Radar SAR · ESA", color: B.teal },
-        { label: "🌧 CHIRPS", value: "Precipitação · NASA/UCSB", color: B.teal },
-        { label: "☁️ Google EE", value: "Processamento em nuvem", color: B.textSub },
+        { label: "🛰 Sentinel-2",   value: "Óptico · ESA Copernicus",    color: B.green  },
+        { label: "📡 Sentinel-1",   value: "Radar SAR · ESA (VV + VH)",  color: B.teal   },
+        { label: "🌧 CHIRPS + GPM", value: "Data Fusion · NASA/UCSB",    color: B.teal   },
+        { label: "☁️ Google EE",    value: "Processamento em nuvem",     color: B.textSub },
+      ]} />
+      <div style={S.sectionLabel}>ALGORITMOS</div>
+      <InfoCard rows={[
+        { label: "NDVI / NBR",  value: "Sentinel-2 Harmonized",  mono: true               },
+        { label: "RVI",         value: "4×VH / (VV + VH)",       mono: true, color: B.teal   },
+        { label: "Alerta RVI",  value: "Z-Score < -1.5σ",        mono: true, color: B.orange },
+        { label: "Suavização",  value: "SMA-3 (30 dias)",         mono: true               },
       ]} />
       <div style={S.sectionLabel}>INFRAESTRUTURA GCP</div>
       <InfoCard rows={[
-        { label: "Cloud Function", value: "Python 3.10 · v2", mono: true },
-        { label: "Scheduler Cron", value: "0 6 * * * (06h)", mono: true, color: B.teal },
-        { label: "Banco de dados", value: "Firestore NoSQL", mono: true },
-        { label: "Auth", value: "Firebase Auth", mono: true },
-        { label: "Segredos", value: "GCP Secret Manager", mono: true },
+        { label: "Cloud Function", value: "Python 3.10 · v2",      mono: true               },
+        { label: "Scheduler Cron", value: "0 6 * * * (06h)",       mono: true, color: B.teal },
+        { label: "Banco de dados", value: "Firestore NoSQL",        mono: true               },
+        { label: "Segredos",       value: "GCP Secret Manager",     mono: true               },
       ]} />
       <div style={S.sectionLabel}>LICENÇAS</div>
       <div style={{ ...S.card, padding: 14 }}>
         <div style={{ fontSize: 11, color: B.textMuted, fontFamily: FONTS.exo, lineHeight: 1.7 }}>
-          Dados Sentinel © Programa Copernicus (ESA). Bibliotecas sob Apache 2.0. AgroScan respeita os limites de quota da Google Earth Engine API.
+          Dados Sentinel © Programa Copernicus (ESA). CHIRPS © NASA/UCSB. Bibliotecas sob Apache 2.0. AgroScan respeita os limites de quota da Google Earth Engine API.
         </div>
       </div>
       <div style={{ marginTop: 28, textAlign: "center", paddingBottom: 8 }}>
         <Logo size={30} />
-        <div style={{ fontFamily: FONTS.mono, fontSize: 8, color: B.textMuted, letterSpacing: 2, marginTop: 8 }}>AGROSCAN v2.2 — APK BUILD · UFABC</div>
+        <div style={{ fontFamily: FONTS.mono, fontSize: 8, color: B.textMuted, letterSpacing: 2, marginTop: 8 }}>AGROSCAN v2.5 — APK BUILD · UFABC</div>
       </div>
     </div>
   );
@@ -723,7 +885,6 @@ function BottomNav({ view, setView }) {
     { id: "settings",     icon: "⚙", label: "Config"  },
   ];
   return (
-    // ✅ v2.2: safe-area-inset-bottom para respeitar barra de gesto do Android
     <div style={{
       position: "absolute", bottom: 0, left: 0, right: 0,
       height: "calc(68px + env(safe-area-inset-bottom, 0px))",
@@ -751,10 +912,15 @@ export default function App() {
   const [farms, setFarms] = useState([]);
   const [logs,  setLogs]  = useState(INITIAL_LOGS);
 
-  // ✅ Carrega dados do localStorage ao iniciar (sem tela de loading — síncrono)
   useEffect(() => {
     setFarms(loadFromStorage(STORAGE_KEYS.farms, []));
     setLogs(loadFromStorage(STORAGE_KEYS.logs, INITIAL_LOGS));
+    // Registra service worker do FCM
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/firebase-messaging-sw.js")
+        .catch(err => console.warn("SW:", err));
+    }
   }, []);
 
   useEffect(() => { saveToStorage(STORAGE_KEYS.farms, farms); }, [farms]);
@@ -765,10 +931,10 @@ export default function App() {
     setLogs(prev => [{ id: Date.now(), time, type, text }, ...prev].slice(0, 10));
   }, []);
 
-  const handleRegister = useCallback(farm => {
+  const handleRegister = useCallback((farm) => {
     setFarms(prev => [farm, ...prev]);
     addLog(`Fazenda "${farm.name}" cadastrada — monitoramento iniciado`, "success");
-    addLog(`Confirmação enviada para ${farm.email}`, "info");
+    addLog(`Relatório enviado para ${farm.email}`, "info");
     addLog("Processamento Sentinel-2 agendado para próxima janela orbital", "info");
   }, [addLog]);
 
@@ -782,12 +948,9 @@ export default function App() {
         ::-webkit-scrollbar{width:2px}
         ::-webkit-scrollbar-thumb{background:${B.border};border-radius:2px}
         input:focus{outline:none!important;border-color:${B.teal}!important;box-shadow:0 0 0 3px ${B.tealGlow}!important}
-        /* Desativa seleção de texto — UX nativo */
         *{-webkit-user-select:none;user-select:none}
         input,textarea{-webkit-user-select:text;user-select:text}
       `}</style>
-
-      {/* ✅ v2.2: sem Phone Frame — div ocupa 100% da viewport nativa */}
       <div style={{
         position: "relative", width: "100vw", height: "100vh",
         background: B.bg0, overflow: "hidden",
@@ -796,7 +959,7 @@ export default function App() {
           radial-gradient(ellipse at 80% 85%, rgba(0,150,200,0.06) 0%, transparent 55%)`,
       }}>
         <div style={{ position: "absolute", inset: 0 }}>
-          {view === "home"         && <HomeView setView={setView} farms={farms} logs={logs} />}
+          {view === "home"         && <HomeView setView={setView} farms={farms} logs={logs} setFarms={setFarms} />}
           {view === "registration" && <RegistrationView setView={setView} onRegister={handleRegister} />}
           {view === "guide"        && <GuideView setView={setView} />}
           {view === "settings"     && <SettingsView farms={farms} />}
