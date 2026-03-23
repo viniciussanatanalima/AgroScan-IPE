@@ -12,21 +12,42 @@ import { useState, useEffect, useRef, useCallback } from "react";
 */
 
 const B = {
-  bg0: "#03080f", bg1: "#060f1c", surface: "#0c1d33", surfaceHi: "#0f2440",
-  border: "#122d50", borderHi: "#1a4470",
-  teal: "#00b4d8", tealDim: "#007a9a",
-  tealGlow: "rgba(0,180,216,0.13)", tealGlow2: "rgba(0,180,216,0.05)",
-  blue: "#1565c0", green: "#3db85c", greenGlow: "rgba(61,184,92,0.13)",
-  textPrimary: "#e8f4f8", textSub: "#8aafc0", textMuted: "#3d6070",
-  red: "#ef5350", orange: "#fb8c00",
-  radarPurple: "#7c3aed",
+  // Fundos baseados nos tons escuros da imagem
+  bg0: "#eeefdd",      // O verde-escuro profundo da primeira bola
+  bg1: "#dbdea9",      // O azul petróleo escuro (segunda bola)
+  surface: "#dbdea9",   // Um meio-termo para cards
+  surfaceHi: "#d8dc93", 
+  
+  // Bordas e divisores
+  border: "#767676",    // O cinza da imagem (sexta bola)
+  borderHi: "#34843e",  // O verde médio (quarta bola) para destaques
+  
+  // Cores de Ação (Ajustadas para combinar)
+  teal: "#eeefdd",      // Azul petróleo principal
+  tealDim: "#052e0a",
+  tealGlow: "rgba(253, 253, 253, 0.31)",
+  
+  // Destaques e Status
+  blue: "#989a74",      // Azul da terceira bola
+  green: "#34843e",     // O verde militar da quarta bola (perfeito para agricultura)
+  greenGlow: "rgba(37, 92, 45, 0.31)",
+  
+  // Textos (Usando o creme da imagem para contraste alto)
+  textPrimary: "#474747", // O tom creme da quinta bola (confortável aos olhos)
+  textSub: "#474747",     // Azul acinzentado para legendas
+  textMuted: "#474747",
+  
+  // Alertas e Radar
+  red: "#ef5350", 
+  orange: "#fb8c00",
+  radarPurple: "#efddef",
 };
 const FONTS = { mono: "'Share Tech Mono', monospace", exo: "'Exo 2', sans-serif" };
 
 const S = {
   sectionLabel: { fontSize: 8.5, color: B.textMuted, letterSpacing: 2.5, textTransform: "uppercase", fontFamily: FONTS.mono, marginBottom: 8, marginTop: 18 },
   monoXs: { fontFamily: FONTS.mono, fontSize: 8, color: B.textMuted, letterSpacing: 1.5 },
-  label: { fontSize: 8.5, color: B.teal, letterSpacing: 2, textTransform: "uppercase", fontFamily: FONTS.mono, display: "block", marginBottom: 6 },
+  label: { fontSize: 8.5, color: B.textSub, letterSpacing: 2, textTransform: "uppercase", fontFamily: FONTS.mono, display: "block", marginBottom: 6 },
   card: { background: B.surface, border: "1px solid " + B.border, borderRadius: 14, overflow: "hidden" },
   cardRow: (last) => ({ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: last ? "none" : "1px solid " + B.bg1 }),
   backBtn: { background: B.surface, border: "1px solid " + B.border, borderRadius: 10, width: 38, height: 38, cursor: "pointer", color: B.textSub, fontSize: 16 },
@@ -89,14 +110,45 @@ async function getFCMToken() {
 
 /* ─── GUIDE ─────────────────────────────────────────────────────────────────*/
 const GUIDE_PAGES = [
-  { id: "intro",      title: "Manual AgroScan",  subtitle: "Satélites a serviço do campo",   grad: ["#050d1a","#0a1e3a"], accent: B.teal,        emoji: "🛰️", content: "O AgroScan combina radar, óptico e meteorológico de múltiplos satélites para diagnóstico completo da sua propriedade, processado no Google Cloud.", tip: "Você recebe relatório por e-mail e notificação push quando a análise terminar." },
-  { id: "radarmode",  title: "Modo Radar",        subtitle: "Quando o óptico falha",          grad: ["#0d0028","#1a0050"], accent: B.radarPurple, emoji: "📡", content: "Com cobertura total de nuvens, o Sentinel-2 não captura imagens. O AgroScan entra em Modo Radar usando o Sentinel-1 SAR — penetra nuvens, opera 24h.", ranges: [{ label: "Z > −1.0", status: "Normal",   color: B.teal }, { label: "Z < −1.0", status: "Atenção",  color: B.orange }, { label: "Z < −1.5", status: "Anomalia", color: B.red }], tip: "Modo Radar é transparente: o app indica qual satélite está ativo e por quê." },
-  { id: "chuva",      title: "Precipitação",      subtitle: "Fusão de 3 Fontes",              grad: ["#001a2e","#002e4a"], accent: B.teal,        emoji: "🌧️", content: "GPM IMERG V07 cobre os últimos 30 dias com latência de ~4h. CHIRPS e ERA5-Land entram quando disponíveis. Buffer de 5km garante cobertura mesmo em pixels de borda.", ranges: [{ label: "> 20mm/7d", status: "Solo Úmido", color: B.teal }, { label: "5–20mm/7d", status: "Moderado", color: B.green }, { label: "< 5mm/7d", status: "Atenção à Seca", color: B.orange }], tip: "A fonte ativa aparece no cartão (ex: GPM-IMERG_V07). Valores 7d e 30d são calculados separadamente." },
-  { id: "ndvi",       title: "NDVI",              subtitle: "Vigor Vegetativo",               grad: ["#061a0d","#0b2e14"], accent: B.green,       emoji: "🌿", content: "Calculado com Sentinel-2 (B8/B4), ou Landsat 8/9 como fallback, ou MODIS 250m como último recurso. Detecta estresse antes de ser visível a olho nu.", ranges: [{ label: "≥ 0.40", status: "Normal", color: B.green }, { label: "0.30–0.40", status: "Alerta", color: B.orange }, { label: "< 0.30", status: "CRÍTICO", color: B.red }], tip: "NDVI < 0.30 indica vegetação muito degradada ou solo exposto — prescrição CRÍTICO emitida automaticamente." },
-  { id: "rvi",        title: "RVI",               subtitle: "Radar Vegetation Index",         grad: ["#030c1f","#071a38"], accent: B.teal,        emoji: "📡", content: "RVI = 4×VH / (VV+VH). Mede quanto o radar é espalhado pela vegetação. Quanto mais folhas e estrutura vegetal, maior o RVI. Calculado com Sentinel-1 SAR — funciona 24h, com nuvens ou sem.", ranges: [{ label: "> 2.5", status: "Vegetação Densa", color: B.green }, { label: "1.5–2.5", status: "Moderado", color: B.teal }, { label: "< 1.5", status: "Solo Exposto / Seco", color: B.orange }], tip: "RVI absoluto varia por tipo de vegetação. Use o Z-Score para comparar com o histórico da sua própria fazenda." },
-  { id: "zscore",     title: "Z-Score RVI",       subtitle: "Anomalia Radar Adaptativa",      grad: ["#030c1f","#071a38"], accent: B.teal,        emoji: "📊", content: "Z = (RVI atual − média 30d) ÷ desvio-padrão. Cada fazenda tem sua própria linha de base. É o índice que nunca para — nem em dias completamente nublados.", ranges: [{ label: "Z > −1.0", status: "Normal",   color: B.teal }, { label: "Z < −1.0", status: "Atenção",  color: B.orange }, { label: "Z < −1.5", status: "Anomalia", color: B.red }], tip: "Uma pastagem naturalmente esparsa nunca recebe o mesmo alerta de uma lavoura densa." },
-];
 
+{ 
+    id: "intro", title: "Manual AgroScan", subtitle: "Satélites a serviço do campo", 
+    grad: ["#eeefdd", "#cbd3a2"], accent: "#2d7035", emoji: "🛰️", 
+    content: "O AgroScan combina radar, óptico e meteorológico de múltiplos satélites para diagnóstico completo da sua propriedade, processado no Google Cloud.", 
+    tip: "Você recebe relatório por e-mail e notificação push quando a análise terminar." 
+  },
+{ 
+    id: "radarmode", title: "Modo Radar", subtitle: "Quando o óptico falha", 
+    grad: ["#eeefdd", "#cbd3a2"], accent: "#9f1fb6", emoji: "📡", 
+    content: "Com cobertura total de nuvens, o Sentinel-2 não captura imagens. O AgroScan entra em Modo Radar usando o Sentinel-1 SAR — penetra nuvens, opera 24h.", 
+    ranges: [{ label: "Z > −1.0", status: "Normal", color: "#2d7035" }, { label: "Z < −1.0", status: "Atenção", color: "#ef6c00" }, { label: "Z < −1.5", status: "Anomalia", color: "#c62828" }], 
+    tip: "Modo Radar é transparente: o app indica qual satélite está ativo e por quê." 
+  },
+  { id: "chuva",title: "Precipitação", subtitle: "Fusão de 3 Fontes",              
+    grad: ["#eeefdd","#cbd3a2"], accent: "#142078", emoji: "🌧️", 
+    content: "GPM IMERG V07 cobre os últimos 30 dias com latência de ~4h. CHIRPS e ERA5-Land entram quando disponíveis. Buffer de 5km garante cobertura mesmo em pixels de borda.", 
+    ranges: [{ label: "> 20mm/7d", status: "Solo Úmido", color: "#1a4a6e" }, { label: "5–20mm/7d", status: "Moderado", color: B.green }, { label: "< 5mm/7d", status: "Atenção à Seca", color: B.orange }], 
+    tip: "A fonte ativa aparece no cartão (ex: GPM-IMERG_V07). Valores 7d e 30d são calculados separadamente." },
+
+  { id: "ndvi", title: "NDVI", subtitle: "Vigor Vegetativo",               
+    grad: ["#eeefdd", "#dbe0b0"], accent: B.green, emoji: "🌿", 
+    content: "Calculado com Sentinel-2 (B8/B4), ou Landsat 8/9 como fallback, ou MODIS 250m como último recurso. Detecta estresse antes de ser visível a olho nu.", 
+    ranges: [{ label: "≥ 0.40", status: "Normal", color: B.green }, { label: "0.30–0.40", status: "Alerta", color: B.orange }, { label: "< 0.30", status: "CRÍTICO", color: B.red }], 
+    tip: "NDVI < 0.30 indica vegetação muito degradada ou solo exposto — prescrição CRÍTICO emitida automaticamente." },
+
+  { id: "rvi", title: "RVI", subtitle: "Radar Vegetation Index",        
+    grad: ["#eeefdd", "#dbe0b0"], accent: "#1e86ba", emoji: "📡", 
+    content: "RVI = 4×VH / (VV+VH). Mede quanto o radar é espalhado pela vegetação. Quanto mais folhas e estrutura vegetal, maior o RVI. Calculado com Sentinel-1 SAR — funciona 24h, com nuvens ou sem.", 
+    ranges: [{ label: "> 2.5", status: "Vegetação Densa", color: B.green }, { label: "1.5–2.5", status: "Moderado", color: B.orange }, { label: "< 1.5", status: "Solo Exposto / Seco", color: B.orange }], 
+    tip: "RVI absoluto varia por tipo de vegetação. Use o Z-Score para comparar com o histórico da sua própria fazenda." },
+
+  { id: "zscore",title: "Z-Score RVI", subtitle: "Anomalia Radar Adaptativa",      
+    grad: ["#eeefdd", "#dbe0b0"], accent: "#474747", emoji: "📊", 
+    content: "Z = (RVI atual − média 30d) ÷ desvio-padrão. Cada fazenda tem sua própria linha de base. É o índice que nunca para — nem em dias completamente nublados.", 
+    ranges: [{ label: "Z > −1.0", status: "Normal",   color: B.green }, { label: "Z < −1.0", status: "Atenção",  color: B.orange }, { label: "Z < −1.5", status: "Anomalia", color: B.red }], 
+    tip: "Uma pastagem naturalmente esparsa nunca recebe o mesmo alerta de uma lavoura densa." },
+
+];
 /* ─── STORAGE ───────────────────────────────────────────────────────────────*/
 const SK = { farms: "agroscan:farms:v3", logs: "agroscan:logs:v3" };
 const load = (k, fb) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; } };
@@ -156,11 +208,11 @@ function Metric({ label, value, sub, color }) {
 function Logo({ size = 34 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" fill="none">
-      <ellipse cx="50" cy="50" rx="47" ry="19" stroke={B.teal} strokeWidth="2.8" fill="none" transform="rotate(-28 50 50)" opacity="0.85"/>
-      <ellipse cx="50" cy="50" rx="47" ry="19" stroke={B.teal} strokeWidth="2.8" fill="none" transform="rotate(28 50 50)" opacity="0.55"/>
+      <ellipse cx="50" cy="50" rx="47" ry="19" stroke={"#474747"} strokeWidth="2.8" fill="none" transform="rotate(-28 50 50)" opacity="0.85"/>
+      <ellipse cx="50" cy="50" rx="47" ry="19" stroke={"#474747"} strokeWidth="2.8" fill="none" transform="rotate(28 50 50)" opacity="0.55"/>
       <circle cx="50" cy="50" r="27" fill="url(#gg)"/>
       <path d="M30 50 Q42 40 54 50 Q66 60 70 50" stroke="#ffffff40" strokeWidth="1.5" fill="none"/>
-      <circle cx="81" cy="21" r="5" fill={B.teal}/><line x1="81" y1="21" x2="75" y2="28" stroke={B.teal} strokeWidth="2"/>
+      <circle cx="81" cy="21" r="5" fill={"#474747"}/><line x1="81" y1="21" x2="75" y2="28" stroke={"#474747"} strokeWidth="2"/>
       <defs><radialGradient id="gg" cx="38%" cy="32%"><stop offset="0%" stopColor="#6fcf3d"/><stop offset="55%" stopColor="#2d8a3e"/><stop offset="100%" stopColor="#1a5828"/></radialGradient></defs>
     </svg>
   );
@@ -367,7 +419,7 @@ function LeafletMap({ onPolygonDrawn, drawnCoords }) {
   return (
     <div style={{position:"relative",borderRadius:14,overflow:"hidden",border:"1px solid "+B.border}}>
       <div ref={mapRef} style={{width:"100%",height:210}}/>
-      <div style={{position:"absolute",top:8,left:8,zIndex:1000}}><MB label={lyr==="sat"?"🗺 MAPA":"🛰 SAT"} onClick={toggleLayer} clr={B.textSub}/></div>
+      <div style={{position:"absolute",top:8,left:8,zIndex:1000}}><MB label={lyr==="sat"?"🗺 MAPA":"🛰 SAT"} onClick={toggleLayer} clr={B.teal}/></div>
       <div style={{position:"absolute",top:8,right:8,zIndex:1000,display:"flex",gap:5}}>
         {!dm?<MB label="✏ DESENHAR" onClick={startDraw}/>:<><MB label={`✓ FECHAR (${cnt})`} onClick={finishDraw} disabled={cnt<3}/><MB label="✕" onClick={clearDraw} clr={B.red}/></>}
       </div>
@@ -415,7 +467,7 @@ function HomeView({ setView, farms, logs, setFarms }) {
           <Logo size={36}/>
           <div>
             <div style={{fontFamily:FONTS.exo,fontSize:18,fontWeight:800,color:B.textPrimary,letterSpacing:3}}>AGROSCAN</div>
-            <div style={{fontFamily:FONTS.mono,fontSize:8,color:B.teal,letterSpacing:2.5}}>PAINEL DE CONTROLE</div>
+            <div style={{fontFamily:FONTS.mono,fontSize:8,color:B.textSub,letterSpacing:2.5}}>PAINEL DE CONTROLE</div>
           </div>
         </div>
         <div style={{position:"relative"}}>
@@ -503,7 +555,7 @@ function HomeView({ setView, farms, logs, setFarms }) {
           <Logo size={54}/>
           <div style={{fontFamily:FONTS.exo,fontSize:16,fontWeight:700,color:B.textPrimary,margin:"14px 0 8px"}}>Nenhuma fazenda ativa</div>
           <div style={{fontSize:11,color:B.textMuted,marginBottom:18,lineHeight:1.7,fontFamily:FONTS.exo}}>Cadastre sua propriedade para iniciar o monitoramento orbital via satélite</div>
-          <button onClick={()=>setView("registration")} style={{background:`linear-gradient(135deg,${B.blue},${B.teal})`,border:"none",borderRadius:12,padding:"10px 22px",color:"#fff",cursor:"pointer",fontFamily:FONTS.exo,fontWeight:700,fontSize:12}}>+ CADASTRAR FAZENDA</button>
+          <button onClick={()=>setView("registration")} style={{background:`linear-gradient(135deg,${"#989a74"},${"#989a74"})`,border:"none",borderRadius:12,padding:"10px 22px",color:"#474747",cursor:"pointer",fontFamily:FONTS.exo,fontWeight:700,fontSize:12}}>+ CADASTRAR FAZENDA</button>
         </div>
       )}
 
@@ -557,11 +609,15 @@ function RegistrationView({ setView, onRegister }) {
 
   return (
     <div style={S.scrollView}>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:22}}>
-        <button onClick={()=>setView("home")} style={S.backBtn}>←</button>
-        <div>
+      <div style={{
+        display:"flex",
+        alignItems:"center",
+        gap:12,
+        marginBottom:22
+        }}>
+        <button onClick={() => setView("home")} style={{ ...S.backBtn, display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>          <div>
           <div style={{fontFamily:FONTS.exo,fontSize:17,fontWeight:800,color:B.textPrimary}}>Nova Propriedade</div>
-          <div style={{fontFamily:FONTS.mono,fontSize:8,color:B.teal,letterSpacing:2}}>GEORREFERENCIAMENTO DE TALHÃO</div>
+          <div style={{fontFamily:FONTS.mono,fontSize:8,color:B.textSub,letterSpacing:2}}>GEORREFERENCIAMENTO DE TALHÃO</div>
         </div>
       </div>
       {[{lbl:"E-MAIL PARA ALERTAS *",ph:"produtor@fazenda.com.br",val:email,set:v=>{setEmail(v);setEmailErr("");},t:"email",err:emailErr},{lbl:"NOME DA PROPRIEDADE *",ph:"Ex: Fazenda Santa Fé",val:farm,set:setFarm,t:"text",err:""}].map(f=>(
@@ -587,7 +643,7 @@ function RegistrationView({ setView, onRegister }) {
           <span>{sc.icon}</span>{status.message}
         </div>
       )}
-      <button onClick={go} disabled={!ok} style={{width:"100%",background:ok?`linear-gradient(135deg,${B.blue},${B.teal})`:B.surface,border:`1px solid ${ok?B.teal:B.border}`,borderRadius:14,padding:"14px",color:ok?"#fff":B.textMuted,cursor:ok?"pointer":"not-allowed",fontFamily:FONTS.exo,fontWeight:700,fontSize:13,letterSpacing:2}}>
+      <button onClick={go} disabled={!ok} style={{width:"100%",background:ok?`linear-gradient(135deg,${B.blue},${B.teal})`:B.surface,border:`1px solid ${ok?B.borderHi:B.border}`,borderRadius:14,padding:"14px",color:ok?"#fff":B.textMuted,cursor:ok?"pointer":"not-allowed",fontFamily:FONTS.exo,fontWeight:700,fontSize:13,letterSpacing:2}}>
         🛰 {status.loading?"ENVIANDO...":"ATIVAR AGROSCAN"}
       </button>
     </div>
@@ -596,48 +652,86 @@ function RegistrationView({ setView, onRegister }) {
 
 /* ─── GUIDE ──────────────────────────────────────────────────────────────────*/
 function GuideView({ setView }) {
-  const [page,setPage]=useState(0);
-  const cur=GUIDE_PAGES[page];
+  const [page, setPage] = useState(0);
+  const cur = GUIDE_PAGES[page];
+  
   return (
-    <div style={{height:"100%",display:"flex",flexDirection:"column",background:`linear-gradient(160deg,${cur.grad[0]},${cur.grad[1]})`,transition:"background 0.5s",padding:"calc(env(safe-area-inset-top, 20px) + 16px) 20px calc(env(safe-area-inset-bottom, 16px) + 80px)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:26}}>
-        <button onClick={()=>setView("home")} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"6px 14px",color:"rgba(255,255,255,0.65)",cursor:"pointer",fontSize:12,fontFamily:FONTS.exo,fontWeight:600}}>← Voltar</button>
-        <div style={{fontFamily:FONTS.mono,fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:2}}>{page+1} / {GUIDE_PAGES.length}</div>
-        <div style={{width:64}}/>
+    <div style={{
+      height: "100%", 
+      display: "flex", 
+      flexDirection: "column", 
+      background: `linear-gradient(160deg, ${cur.grad[0]}, ${cur.grad[1]})`, 
+      transition: "background 0.5s", 
+      padding: "calc(env(safe-area-inset-top, 20px) + 16px) 20px calc(env(safe-area-inset-bottom, 16px) + 80px)"
+    }}>
+      {/* Topo: Botão Voltar e Contador */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 26 }}>
+        <button onClick={() => setView("home")} style={{
+          background: "rgba(0,0,0,0.05)", 
+          border: "1px solid rgba(0,0,0,0.1)", 
+          borderRadius: 10, 
+          padding: "6px 14px", 
+          color: B.textPrimary, // MUDOU AQUI
+          cursor: "pointer", 
+          fontSize: 12, 
+          fontFamily: FONTS.exo, 
+          fontWeight: 600
+        }}>← Voltar</button>
+        <div style={{ fontFamily: FONTS.mono, fontSize: 9, color: B.textMuted, letterSpacing: 2 }}>{page + 1} / {GUIDE_PAGES.length}</div>
+        <div style={{ width: 64 }} />
       </div>
-      <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",paddingBottom:12}}>
-        <div style={{fontSize:54,marginBottom:16}}>{cur.emoji}</div>
-        <div style={{fontFamily:FONTS.exo,fontSize:26,fontWeight:800,color:"#fff",letterSpacing:3,textTransform:"uppercase"}}>{cur.title}</div>
-        <div style={{fontFamily:FONTS.mono,fontSize:9.5,color:cur.accent,letterSpacing:3,textTransform:"uppercase",margin:"4px 0 14px"}}>{cur.subtitle}</div>
-        <div style={{fontFamily:FONTS.exo,fontSize:13,lineHeight:1.8,color:"rgba(255,255,255,0.7)",maxWidth:285,marginBottom:20}}>{cur.content}</div>
-        {cur.ranges&&(
-          <div style={{width:"100%",maxWidth:295,display:"flex",flexDirection:"column",gap:7,marginBottom:18}}>
-            {cur.ranges.map(r=>(
-              <div key={r.label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(255,255,255,0.05)",borderRadius:10,padding:"8px 14px"}}>
-                <span style={{fontFamily:FONTS.mono,fontSize:12,color:r.color}}>{r.label}</span>
-                <span style={{fontFamily:FONTS.exo,fontSize:12,color:"rgba(255,255,255,0.55)"}}>{r.status}</span>
-                <div style={{width:8,height:8,borderRadius:"50%",background:r.color,boxShadow:`0 0 6px ${r.color}`}}/>
+
+      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", paddingBottom: 12 }}>
+        <div style={{ fontSize: 64, marginBottom: 16 }}>{cur.emoji}</div>
+        
+        {/* Título Principal - Agora escuro */}
+        <div style={{ fontFamily: FONTS.exo, fontSize: 26, fontWeight: 800, color: B.textPrimary, letterSpacing: 3, textTransform: "uppercase" }}>{cur.title}</div>
+        
+        {/* Subtítulo - Cor de destaque (Verde ou Azul) */}
+        <div style={{ fontFamily: FONTS.mono, fontSize: 9.5, color: cur.accent, letterSpacing: 3, textTransform: "uppercase", margin: "4px 0 14px" }}>{cur.subtitle}</div>
+        
+        {/* Conteúdo - Escuro suave */}
+        <div style={{ fontFamily: FONTS.exo, fontSize: 13, lineHeight: 1.8, color: B.textSub, maxWidth: 285, marginBottom: 20 }}>{cur.content}</div>
+
+        {cur.ranges && (
+          <div style={{ width: "100%", maxWidth: 295, display: "flex", flexDirection: "column", gap: 7, marginBottom: 18 }}>
+            {cur.ranges.map(r => (
+              <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.04)", borderRadius: 10, padding: "8px 14px", border: "1px solid rgba(0,0,0,0.05)" }}>
+                <span style={{ fontFamily: FONTS.mono, fontSize: 12, color: r.color }}>{r.label}</span>
+                <span style={{ fontFamily: FONTS.exo, fontSize: 12, color: B.textMuted }}>{r.status}</span>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: r.color, boxShadow: `0 0 6px ${r.color}` }} />
               </div>
             ))}
           </div>
         )}
-        <div style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${cur.accent}44`,borderLeft:`3px solid ${cur.accent}`,borderRadius:10,padding:"10px 14px",maxWidth:295,textAlign:"left"}}>
-          <div style={{fontSize:8.5,color:cur.accent,letterSpacing:2,textTransform:"uppercase",fontFamily:FONTS.mono,marginBottom:4}}>💡 DICA DE CAMPO</div>
-          <div style={{fontSize:12,color:"rgba(255,255,255,0.6)",fontFamily:FONTS.exo,lineHeight:1.6}}>{cur.tip}</div>
+
+        {/* Card de Dica - Com bordas visíveis */}
+        <div style={{ background: "rgba(0,0,0,0.02)", border: `1px solid ${cur.accent}33`, borderLeft: `4px solid ${cur.accent}`, borderRadius: 10, padding: "12px 16px", maxWidth: 295, textAlign: "left" }}>
+          <div style={{ fontSize: 8.5, color: cur.accent, letterSpacing: 2, textTransform: "uppercase", fontFamily: FONTS.mono, marginBottom: 4 }}>💡 DICA DE CAMPO</div>
+          <div style={{ fontSize: 12, color: B.textPrimary, fontFamily: FONTS.exo, lineHeight: 1.6 }}>{cur.tip}</div>
         </div>
       </div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:20}}>
-        {[{show:page>0,label:"←",fn:()=>setPage(p=>p-1)},{show:page<GUIDE_PAGES.length-1,label:"→",fn:()=>setPage(p=>p+1)}].map((b,i)=>(
-          <button key={i} onClick={b.fn} disabled={!b.show} style={{background:b.show?"rgba(255,255,255,0.1)":"transparent",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,padding:"10px 18px",color:b.show?"#fff":"transparent",cursor:b.show?"pointer":"default",fontSize:16}}>{b.label}</button>
+
+      {/* Controles de Baixo */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20 }}>
+        {[{ show: page > 0, label: "←", fn: () => setPage(p => p - 1) }, { show: page < GUIDE_PAGES.length - 1, label: "→", fn: () => setPage(p => p + 1) }].map((b, i) => (
+          <button key={i} onClick={b.fn} disabled={!b.show} style={{
+            background: b.show ? "rgba(0,0,0,0.05)" : "transparent", 
+            border: "1px solid rgba(0,0,0,0.1)", 
+            borderRadius: 12, 
+            padding: "10px 18px", 
+            color: b.show ? B.textPrimary : "transparent", 
+            cursor: b.show ? "pointer" : "default", 
+            fontSize: 16
+          }}>{b.label}</button>
         ))}
-        <div style={{display:"flex",gap:6}}>
-          {GUIDE_PAGES.map((_,i)=><button key={i} onClick={()=>setPage(i)} style={{width:i===page?24:8,height:8,borderRadius:4,background:i===page?cur.accent:"rgba(255,255,255,0.2)",border:"none",cursor:"pointer",transition:"all 0.3s",padding:0}}/>)}
+        <div style={{ display: "flex", gap: 6 }}>
+          {GUIDE_PAGES.map((_, i) => <button key={i} onClick={() => setPage(i)} style={{ width: i === page ? 24 : 8, height: 8, borderRadius: 4, background: i === page ? cur.accent : "rgba(0,0,0,0.2)", border: "none", cursor: "pointer", transition: "all 0.3s", padding: 0 }} />)}
         </div>
       </div>
     </div>
   );
 }
-
 /* ─── SETTINGS ───────────────────────────────────────────────────────────────*/
 function SettingsView({ farms }) {
   const farm = farms[0];
@@ -659,11 +753,11 @@ function SettingsView({ farms }) {
       <div style={S.sectionLabel}>CONTA</div>
       <InfoCard rows={[{label:"E-mail",value:farm?.email||"—"},{label:"Propriedade",value:farm?.name||"—"},{label:"Status",value:farm?"Ativo":"Sem cadastro",color:farm?B.green:B.textMuted}]}/>
       <div style={S.sectionLabel}>SATÉLITES & FONTES</div>
-      <InfoCard rows={[{label:"🛰 Sentinel-2",value:"Óptico · ESA Copernicus",color:B.green},{label:"📡 Sentinel-1",value:"Radar SAR · VV + VH",color:B.teal},{label:"🔭 Landsat 8/9",value:"Fallback óptico · USGS",color:B.orange},{label:"🌍 MODIS",value:"Fallback final · NDVI 250m",color:B.textSub},{label:"🌧 CHIRPS+GPM",value:"Precipitação · NASA",color:B.teal}]}/>
+      <InfoCard rows={[{label:"🛰 Sentinel-2",value:"Óptico · ESA Copernicus",color:B.green},{label:"📡 Sentinel-1",value:"Radar SAR · VV + VH",color:B.textMuted},{label:"🔭 Landsat 8/9",value:"Fallback óptico · USGS",color:B.orange},{label:"🌍 MODIS",value:"Fallback final · NDVI 250m",color:B.textSub},{label:"🌧 CHIRPS+GPM",value:"Precipitação · NASA",color:B.textMuted}]}/>
       <div style={S.sectionLabel}>ALGORITMOS</div>
-      <InfoCard rows={[{label:"NDVI/NBR",value:"S2 → Landsat → MODIS",mono:true},{label:"RVI",value:"4×VH / (VV + VH)",mono:true,color:B.teal},{label:"Alerta RVI",value:"Z-Score < −1.5σ",mono:true,color:B.orange},{label:"Modo Radar",value:"ndvi=null + nbr=null",mono:true,color:B.radarPurple}]}/>
+      <InfoCard rows={[{label:"NDVI/NBR",value:"S2 → Landsat → MODIS",mono:true},{label:"RVI",value:"4×VH / (VV + VH)",mono:true,color:B.textMuted},{label:"Alerta RVI",value:"Z-Score < −1.5σ",mono:true,color:B.orange},{label:"Modo Radar",value:"ndvi=null + nbr=null",mono:true,color:"#9f1fb6"}]}/>
       <div style={S.sectionLabel}>INFRAESTRUTURA GCP</div>
-      <InfoCard rows={[{label:"Cloud Function",value:"Python 3.10 · v2",mono:true},{label:"Scheduler",value:"0 6 * * * (06h)",mono:true,color:B.teal},{label:"Banco",value:"Firestore NoSQL",mono:true},{label:"Segredos",value:"GCP Secret Manager",mono:true}]}/>
+      <InfoCard rows={[{label:"Cloud Function",value:"Python 3.10 · v2",mono:true},{label:"Scheduler",value:"0 6 * * * (06h)",mono:true,color:B.textMuted},{label:"Banco",value:"Firestore NoSQL",mono:true},{label:"Segredos",value:"GCP Secret Manager",mono:true}]}/>
       <div style={{marginTop:28,textAlign:"center",paddingBottom:8}}>
         <Logo size={30}/>
         <div style={{fontFamily:FONTS.mono,fontSize:8,color:B.textMuted,letterSpacing:2,marginTop:8}}>AGROSCAN v3.0 — APK BUILD · UFABC</div>
@@ -676,13 +770,13 @@ function SettingsView({ farms }) {
 function BottomNav({ view, setView }) {
   const tabs=[{id:"home",icon:"⌂",label:"Home"},{id:"registration",icon:"+",label:"Cadastro"},{id:"guide",icon:"📖",label:"Guia"},{id:"settings",icon:"⚙",label:"Config"}];
   return (
-    <div style={{position:"absolute",bottom:0,left:0,right:0,height:"calc(68px + env(safe-area-inset-bottom, 0px))",paddingBottom:"env(safe-area-inset-bottom, 0px)",background:"rgba(3,8,15,0.97)",backdropFilter:"blur(20px)",borderTop:`1px solid ${B.border}`,display:"flex",alignItems:"flex-start",justifyContent:"space-around",paddingTop:6,zIndex:100}}>
+    <div style={{position:"absolute",bottom:0,left:0,right:0,height:"calc(68px + env(safe-area-inset-bottom, 0px))",paddingBottom:"env(safe-area-inset-bottom, 0px)",background:"#34843f",backdropFilter:"blur(20px)",borderTop:`1px solid ${"#eeefdd"}`,display:"flex",alignItems:"flex-start",justifyContent:"space-around",paddingTop:6,zIndex:100}}>
       {tabs.map(t=>{
         const active=view===t.id;
         return (
-          <button key={t.id} onClick={()=>setView(t.id)} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"6px 12px"}}>
-            <div style={{width:38,height:38,borderRadius:11,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,transition:"all 0.25s",background:active?B.tealGlow:"transparent",border:active?`1px solid ${B.teal}44`:"1px solid transparent",color:active?B.teal:B.textMuted}}>{t.icon}</div>
-            <span style={{fontSize:8,color:active?B.teal:B.textMuted,fontFamily:FONTS.mono,letterSpacing:1}}>{t.label.toUpperCase()}</span>
+          <button key={t.id} onClick={()=>setView(t.id)} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"3px 12px"}}>
+            <div style={{width:38,height:38,borderRadius:11,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,transition:"all 0.25s",background:active?"#225929bd":"transparent",border:active?`0px solid ${"#225929"}44`:"1px solid transparent",color:active?"#eeefdd":"#eeefdd"}}>{t.icon}</div>
+            <span style={{fontSize:8,color:active?B.teal:"#eeefdd",fontFamily:FONTS.mono,letterSpacing:1}}>{t.label.toUpperCase()}</span>
           </button>
         );
       })}
