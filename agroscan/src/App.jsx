@@ -1,15 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-
-/*
- ╔══════════════════════════════════════════════════════════════╗
- ║  AgroScan v3.0 — APK BUILD                                  ║
- ║  • filterBounds() em todas as coleções GEE                  ║
- ║  • Fallback óptico: S2 → Landsat 8/9 → MODIS               ║
- ║  • MODO RADAR: análise exclusiva por RVI/Z-Score            ║
- ║  • ZScoreGauge: gauge semicircular animado                  ║
- ║  • null exibido como "—", nunca como 0.000                  ║
- ╚══════════════════════════════════════════════════════════════╝
-*/
+import logoImg from "./assets/logo2.png";
 
 const B = {
   bg0: "#eeefdd",
@@ -209,14 +199,8 @@ function Metric({ label, value, sub, color }) {
 
 function Logo({ size = 34 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 100 100" fill="none">
-      <ellipse cx="50" cy="50" rx="47" ry="19" stroke={"#474747"} strokeWidth="2.8" fill="none" transform="rotate(-28 50 50)" opacity="0.85"/>
-      <ellipse cx="50" cy="50" rx="47" ry="19" stroke={"#474747"} strokeWidth="2.8" fill="none" transform="rotate(28 50 50)" opacity="0.55"/>
-      <circle cx="50" cy="50" r="27" fill="url(#gg)"/>
-      <path d="M30 50 Q42 40 54 50 Q66 60 70 50" stroke="#ffffff40" strokeWidth="1.5" fill="none"/>
-      <circle cx="81" cy="21" r="5" fill={"#474747"}/><line x1="81" y1="21" x2="75" y2="28" stroke={"#474747"} strokeWidth="2"/>
-      <defs><radialGradient id="gg" cx="38%" cy="32%"><stop offset="0%" stopColor="#6fcf3d"/><stop offset="55%" stopColor="#2d8a3e"/><stop offset="100%" stopColor="#1a5828"/></radialGradient></defs>
-    </svg>
+    <img src={logoImg} width={size} height={size} 
+         style={{objectFit:"contain"}} alt="AgroScan"/>
   );
 }
 
