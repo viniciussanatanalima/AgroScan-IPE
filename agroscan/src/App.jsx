@@ -12,35 +12,30 @@ import { useState, useEffect, useRef, useCallback } from "react";
 */
 
 const B = {
-  // Fundos baseados nos tons escuros da imagem
-  bg0: "#eeefdd",      // O verde-escuro profundo da primeira bola
-  bg1: "#dbdea9",      // O azul petróleo escuro (segunda bola)
-  surface: "#dbdea9",   // Um meio-termo para cards
-  surfaceHi: "#d8dc93", 
-  
-  // Bordas e divisores
-  border: "#767676",    // O cinza da imagem (sexta bola)
-  borderHi: "#34843e",  // O verde médio (quarta bola) para destaques
-  
-  // Cores de Ação (Ajustadas para combinar)
-  teal: "#eeefdd",      // Azul petróleo principal
-  tealDim: "#052e0a",
-  tealGlow: "rgba(253, 253, 253, 0.31)",
-  
-  // Destaques e Status
-  blue: "#989a74",      // Azul da terceira bola
-  green: "#34843e",     // O verde militar da quarta bola (perfeito para agricultura)
+  bg0: "#eeefdd",
+  bg1: "#dbdea9",
+  surface: "#dbdea9",
+  surfaceHi: "#d8dc93",
+
+  border: "#9a9d7a",
+  borderHi: "#34843e",
+
+  teal: "#2d7a3a",
+  tealDim: "#1a4d23",
+  tealGlow: "rgba(45, 122, 58, 0.25)",   // ← estava faltando (usado no CSS do input)
+  tealGlow2: "rgba(45, 122, 58, 0.10)",
+
+  blue: "#5a6e2e",
+  green: "#34843e",
   greenGlow: "rgba(37, 92, 45, 0.31)",
-  
-  // Textos (Usando o creme da imagem para contraste alto)
-  textPrimary: "#474747", // O tom creme da quinta bola (confortável aos olhos)
-  textSub: "#474747",     // Azul acinzentado para legendas
-  textMuted: "#474747",
-  
-  // Alertas e Radar
-  red: "#ef5350", 
-  orange: "#fb8c00",
-  radarPurple: "#efddef",
+
+  textPrimary: "#2b2b2b",
+  textSub: "#4a4a3a",
+  textMuted: "#6b6b55",
+
+  red: "#ef5350",
+  orange: "#e65100",
+  radarPurple: "#7c3aed",
 };
 const FONTS = { mono: "'Share Tech Mono', monospace", exo: "'Exo 2', sans-serif" };
 
@@ -87,6 +82,7 @@ function applyEEData(prev, d) {
     opticalSource: d.optical_source        ?? prev[0].opticalSource,
     ndvi_series:   d.ndvi_series?.length   ? d.ndvi_series : (prev[0].ndvi_series || []),
     rvi_series:    d.rvi_series?.length    ? d.rvi_series  : (prev[0].rvi_series  || []),
+    prescricao: d.prescricao ?? prev[0].prescricao ?? null,
   }, ...prev.slice(1)];
 }
 
@@ -167,6 +163,12 @@ function calcZScore(series) {
 function getAlertLevel(farm) {
   if (!farm) return null;
   if (farm.rvi == null && farm.ndvi == null && farm.nbr == null) return "pending";
+  if (farm.prescricao) {
+  const p = farm.prescricao.toLowerCase();
+  if (p.includes("crítico") || p.includes("critico")) return "red";
+  if (p.includes("atenção") || p.includes("atencao") || p.includes("alerta")) return "orange";
+  if (p.includes("normal")) return "green";
+  }
   const z = calcZScore(farm.rvi_series);
   if ((farm.nbr  != null && farm.nbr  < 0.1) || (farm.ndvi != null && farm.ndvi < 0.3)) return "red";
   if ((farm.ndvi != null && farm.ndvi < 0.4) || (z !== null && z < -1.5)) return "orange";
@@ -341,23 +343,30 @@ function SparklineChart({ data, color = "#00b4d8", label = "EVOLUÇÃO (30D)" })
       </div>
     </div>
   );
-  const sm  = data.map((v, i, a) => { const s = a.slice(Math.max(0,i-2),i+1); return s.reduce((x,y)=>x+y,0)/s.length; });
-  const mn  = Math.min(...sm), mx = Math.max(...sm), rng = mx - mn || 1;
+  const sm = data.map((v, i, a) => { const s = a.slice(Math.max(0,i-2),i+1); return s.reduce((x,y)=>x+y,0)/s.length; });
+  const mn = Math.min(...sm), mx = Math.max(...sm);
+  const rng = (mx - mn) < 0.001 ? 0.01 : (mx - mn);
   const W = 280, H = 40;
   const pts = sm.map((v,i) => `${(i/(sm.length-1))*W},${H-((v-mn)/rng)*H}`).join(" ");
   const ly  = H - ((sm[sm.length-1]-mn)/rng)*H;
   return (
-    <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-        <div style={{ fontSize: 8, color: B.textSub, fontFamily: FONTS.mono, letterSpacing: 1.5 }}>{label}</div>
-        <div style={{ fontSize: 8, color, fontFamily: FONTS.mono }}>SMA-3</div>
+  <div style={{ marginTop: 14, borderTop: "1px solid rgba(0,0,0,0.06)", paddingTop: 12 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+      <div style={{ fontSize: 8, color: B.textSub, fontFamily: FONTS.mono, letterSpacing: 1.5 }}>{label}</div>
+      <div style={{ fontSize: 8, color, fontFamily: FONTS.mono }}>
+        {sm[sm.length-1].toFixed(3)} <span style={{color:B.textMuted}}>({mn.toFixed(3)}–{mx.toFixed(3)})</span>
       </div>
-      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ overflow: "visible" }}>
-        <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" points={pts} style={{ filter: `drop-shadow(0 0 3px ${color}80)` }}/>
-        <circle cx={W} cy={ly} r="3" fill={color} style={{ filter: `drop-shadow(0 0 4px ${color})` }}/>
-      </svg>
     </div>
-  );
+    <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ overflow: "visible" }}>
+      <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" points={pts}
+        style={{ filter: `drop-shadow(0 0 3px ${color}80)` }}/>
+      <circle cx={W} cy={ly} r="3" fill={color} style={{ filter: `drop-shadow(0 0 4px ${color})` }}/>
+      {/* min/max labels */}
+      <text x="0" y={H} fill={B.textMuted} fontSize="7" fontFamily={FONTS.mono}>{mn.toFixed(3)}</text>
+      <text x="0" y="8" fill={B.textMuted} fontSize="7" fontFamily={FONTS.mono}>{mx.toFixed(3)}</text>
+    </svg>
+  </div>
+);
 }
 
 /* ─── LEAFLET MAP ────────────────────────────────────────────────────────────*/
@@ -430,7 +439,7 @@ function LeafletMap({ onPolygonDrawn, drawnCoords }) {
 }
 
 /* ─── HOME ───────────────────────────────────────────────────────────────────*/
-function HomeView({ setView, farms, logs, setFarms }) {
+function HomeView({ setView, farms, logs, setFarms, addLog }) {
   const farm      = farms[0] || null;
   const alert     = getAlertLevel(farm);
   const radarMode = farm && farm.ndvi == null && farm.nbr == null && farm.rvi != null;
@@ -491,7 +500,7 @@ function HomeView({ setView, farms, logs, setFarms }) {
       {farm ? (
         <>
           {/* Farm header */}
-          <div style={{background:`linear-gradient(145deg,${B.surface},${B.surfaceHi})`,border:"1px solid "+B.borderHi,borderTop:`2px solid ${radarMode?B.radarPurple:B.teal}`,borderRadius:18,padding:18,marginBottom:14,position:"relative",overflow:"hidden"}}>
+          <div style={{background: `linear-gradient(145deg, ${B.surface}, ${B.surfaceHi})`,border:"1px solid "+B.borderHi,borderTop:`2px solid ${radarMode?B.radarPurple:B.teal}`,borderRadius:18,padding:18,marginBottom:14,position:"relative",overflow:"hidden"}}>
             <OrbitDeco/>
             <div style={{position:"relative",zIndex:1}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
@@ -507,12 +516,60 @@ function HomeView({ setView, farms, logs, setFarms }) {
                 </div>
                 <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
                   <AlertBadge level={alert}/>
-                  {alert==="pending"&&(
-                    <div style={{padding:"7px 10px",background:"rgba(0,180,216,0.06)",border:"1px solid #007a9a44",borderRadius:10,fontSize:9.5,color:B.textMuted,fontFamily:FONTS.exo,lineHeight:1.6,textAlign:"right"}}>
-                      ⏳ Earth Engine processando.<br/><b style={{color:B.teal}}>Notificação em até 10 min.</b>
+                  {alert==="pending" && (
+                    <div style={{
+                      padding:"7px 10px",
+                      background:"rgba(0,180,216,0.06)",
+                      border:"1px solid #007a9a44",
+                      borderRadius:10,
+                      fontSize:9.5,
+                      color:B.textMuted,
+                      fontFamily:FONTS.exo,
+                      lineHeight:1.6,
+                      textAlign:"right"
+                    }}>
+                      ⏳ Earth Engine processando.<br/>
+                      <b style={{color:B.teal}}>Notificação em até 10 min.</b>
                     </div>
                   )}
-                </div>
+                  <button onClick={async () => {
+                    if (!farm) return;
+                    try {
+                      const r = await fetch(CLOUD_FUNCTION_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ email: farm.email, nome_fazenda: farm.name, coordinates: farm.coords })
+                      });
+                      const json = await r.json();
+                      if (json?.data) {
+                        const d = {
+                          ...json.data,
+                          prescricao: json.data.prescricao
+                            ?? (json.prescriptions?.[0])
+                            ?? (json.data.prescriptions?.[0])
+                            ?? null,
+                        };
+                        setFarms(prev => applyEEData(prev, d));
+                        addLog(`Dados atualizados para "${farm.name}"`, "success");
+                      }
+                    } catch {}
+                  }} style={{
+                    background: B.tealGlow2, border: `1px solid ${B.teal}44`,
+                    borderRadius: 8, padding: "4px 10px", fontSize: 9,
+                    color: B.teal, cursor: "pointer", fontFamily: FONTS.mono, marginTop: 4
+                  }}>🔄 ATUALIZAR</button>
+                  <button onClick={() => {
+                    if (window.confirm(`Remover "${farm.name}"?`)) {
+                      setFarms(prev => prev.slice(1));
+                      addLog(`Fazenda "${farm.name}" removida`, "info");
+                    }
+                  }} style={{
+                    background: "rgba(239,83,80,0.08)",
+                    border: `1px solid ${B.red}44`,
+                    borderRadius: 8, padding: "4px 10px", fontSize: 9,
+                    color: B.red, cursor: "pointer", fontFamily: FONTS.mono, marginTop: 4
+                  }}>🗑 REMOVER</button>
+                  </div>
               </div>
 
               {/* Métricas — null → "—" */}
@@ -810,19 +867,39 @@ export default function App() {
     setLogs(prev=>[{id:Date.now(),time,type,text},...prev].slice(0,10));
   },[]);
 
-  const handleRegister=useCallback((farm,fcmToken)=>{
-    setFarms(prev=>[farm,...prev]);
-    addLog(`Fazenda "${farm.name}" cadastrada`,"success");
-    addLog(`Relatório enviado para ${farm.email}`,"info");
+  const handleRegister = useCallback((farm, fcmToken) => {
+    setFarms(prev => [farm, ...prev]);
+    addLog(`Fazenda "${farm.name}" cadastrada`, "success");
+    addLog(`Relatório enviado para ${farm.email}`, "info");
 
-    fetch(CLOUD_FUNCTION_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:farm.email,nome_fazenda:farm.name,coordinates:farm.coords,fcm_token:fcmToken})})
-      .then(r=>r.json())
-      .then(json=>{
-        if(!json?.data) return;
-        setFarms(prev=>[{...applyEEData(prev,json.data)[0],...(json.farm_id?{farmId:json.farm_id}:{})},...prev.slice(1)]);
-        addLog(`Dados orbitais recebidos para "${farm.name}"`,"success");
-      }).catch(()=>{});
-  },[addLog]);
+    fetch(CLOUD_FUNCTION_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: farm.email,
+        nome_fazenda: farm.name,
+        coordinates: farm.coords,
+        fcm_token: fcmToken
+      })
+    })
+      .then(r => r.json())
+      .then(json => {
+        if (!json?.data) return;
+        const d = {
+          ...json.data,
+          prescricao: json.data.prescricao
+            ?? (json.prescriptions?.[0])
+            ?? (json.data.prescriptions?.[0])
+            ?? null,
+        };
+        setFarms(prev => [{
+          ...applyEEData(prev, d)[0],
+          ...(json.farm_id ? { farmId: json.farm_id } : {})
+        }, ...prev.slice(1)]);
+        addLog(`Dados orbitais recebidos para "${farm.name}"`, "success");
+      })
+      .catch(() => {});
+  }, [addLog]);
 
   return (
     <>
@@ -837,9 +914,9 @@ export default function App() {
         *{-webkit-user-select:none;user-select:none}
         input,textarea{-webkit-user-select:text;user-select:text}
       `}</style>
-      <div style={{position:"relative",width:"100vw",height:"100vh",background:B.bg0,overflow:"hidden",backgroundImage:`radial-gradient(ellipse at 20% 15%,rgba(0,100,180,0.08) 0%,transparent 55%),radial-gradient(ellipse at 80% 85%,rgba(0,150,200,0.06) 0%,transparent 55%)`}}>
+      <div style={{position:"relative",width:"100vw",height:"100vh",background:B.bg0,overflow:"hidden",backgroundImage: `radial-gradient(ellipse at 20% 15%, rgba(52,132,62,0.08) 0%, transparent 55%), radial-gradient(ellipse at 80% 85%, rgba(203,211,162,0.15) 0%, transparent 55%)`,}}>
         <div style={{position:"absolute",inset:0}}>
-          {view==="home"         && <HomeView setView={setView} farms={farms} logs={logs} setFarms={setFarms}/>}
+          {view==="home"         && <HomeView setView={setView} farms={farms} logs={logs} setFarms={setFarms} addLog={addLog}/>}
           {view==="registration" && <RegistrationView setView={setView} onRegister={handleRegister}/>}
           {view==="guide"        && <GuideView setView={setView}/>}
           {view==="settings"     && <SettingsView farms={farms}/>}
