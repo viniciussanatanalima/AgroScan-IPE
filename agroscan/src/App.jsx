@@ -161,8 +161,8 @@ function getAlertLevel(farm) {
   }
   const z = calcZScore(farm.rvi_series);
   if ((farm.nbr  != null && farm.nbr  < 0.1) || (farm.ndvi != null && farm.ndvi < 0.3)) return "red";
-  if ((farm.ndvi != null && farm.ndvi < 0.4) || (z !== null && z < -1.5)) return "orange";
-  if (z !== null && z < -1.0) return "orange";
+  if ((farm.ndvi != null && farm.ndvi < 0.4) || (z !== null && z <= -1.5)) return "orange";
+  if (z !== null && z <= -1.0) return "orange";
   return "green";
 }
 const ALERT_CFG = {
@@ -446,7 +446,11 @@ function HomeView({ setView, farms, logs, setFarms, addLog }) {
         const j = await r.json();
         if (!r.ok || j.error || !j.data) return;
         if (j.data.ndvi_mean==null && j.data.nbr_mean==null && j.data.rvi_mean==null) return;
-        setFarms(prev => applyEEData(prev, j.data)); clearInterval(p);
+        const d = {
+          ...j.data,
+          prescricao: j.data.prescricao ?? (j.prescriptions?.[0]) ?? null,
+        };
+        setFarms(prev => applyEEData(prev, d)); clearInterval(p);
       } catch {}
     }, 45_000);
     return () => clearInterval(p);
