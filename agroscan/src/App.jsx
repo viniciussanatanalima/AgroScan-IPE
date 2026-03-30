@@ -59,21 +59,22 @@ const CLOUD_FUNCTION_URL    = "https://us-central1-agroscan-ipe.cloudfunctions.n
 const CLOUD_FUNCTION_STATUS = "https://us-central1-agroscan-ipe.cloudfunctions.net/get_farm_status";
 
 /* aplica dados EE preservando nulls (não usa ?? para precipitação que pode ser 0) */
-function applyEEData(prev, d) {
-  if (!prev || prev.length === 0) return prev;
-  return [{
-    ...prev[0],
-    ndvi:          d.ndvi_mean             ?? prev[0].ndvi,
-    nbr:           d.nbr_mean              ?? prev[0].nbr,
-    rvi:           d.rvi_mean              ?? prev[0].rvi,
-    rain7d:        d.precipitation_sum_7d  != null ? d.precipitation_sum_7d  : prev[0].rain7d,
-    rain30d:       d.precipitation_sum_30d != null ? d.precipitation_sum_30d : prev[0].rain30d,
+function applyEEData(prev, d, idx = 0) {
+  if (!prev || prev.length === 0 || !prev[idx]) return prev;
+  const updated = {
+    ...prev[idx],
+    ndvi:          d.ndvi_mean             ?? prev[idx].ndvi,
+    nbr:           d.nbr_mean              ?? prev[idx].nbr,
+    rvi:           d.rvi_mean              ?? prev[idx].rvi,
+    rain7d:        d.precipitation_sum_7d  != null ? d.precipitation_sum_7d  : prev[idx].rain7d,
+    rain30d:       d.precipitation_sum_30d != null ? d.precipitation_sum_30d : prev[idx].rain30d,
     dataGap:       d.data_gap              ?? false,
-    opticalSource: d.optical_source        ?? prev[0].opticalSource,
-    ndvi_series:   d.ndvi_series?.length   ? d.ndvi_series : (prev[0].ndvi_series || []),
-    rvi_series:    d.rvi_series?.length    ? d.rvi_series  : (prev[0].rvi_series  || []),
-    prescricao: d.prescricao ?? prev[0].prescricao ?? null,
-  }, ...prev.slice(1)];
+    opticalSource: d.optical_source        ?? prev[idx].opticalSource,
+    ndvi_series:   d.ndvi_series?.length   ? d.ndvi_series : (prev[idx].ndvi_series || []),
+    rvi_series:    d.rvi_series?.length    ? d.rvi_series  : (prev[idx].rvi_series  || []),
+    prescricao:    d.prescricao ?? prev[idx].prescricao ?? null,
+  };
+  return [...prev.slice(0, idx), updated, ...prev.slice(idx + 1)];
 }
 
 /* ─── FCM ───────────────────────────────────────────────────────────────────*/
@@ -838,12 +839,20 @@ export default function App() {
     setFarms(sf);
     setLogs(load(SK.logs,[{id:Date.now(),time:"00:00",type:"info",text:"Sistema iniciado."}]));
 
-    /* recovery: busca resultado salvo se app foi fechado durante pending */
-    const p=sf[0];
-    if (p?.farmId && p.rvi==null && p.ndvi==null) {
-      fetch(CLOUD_FUNCTION_STATUS,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({farm_id:p.farmId})})
-        .then(r=>r.json()).then(j=>{if(j.status==="ready"&&j.data)setFarms(prev=>applyEEData(prev,j.data));}).catch(()=>{});
-    }
+    /* Busca dados frescos do Firestore para todas as fazendas ao iniciar.
+       Corrige o bug onde o app ficava com dados antigos do localStorage
+       enquanto o email diário já tinha dados novos. */
+    sf.forEach((farm, idx) => {
+      if (!farm?.farmId) return;
+      fetch(CLOUD_FUNCTION_STATUS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ farm_id: farm.farmId })
+      })
+        .then(r => r.json())
+        .then(j => { if (j.status === "ready" && j.data) setFarms(prev => applyEEData(prev, j.data, idx)); })
+        .catch(() => {});
+    });
     if("serviceWorker"in navigator) navigator.serviceWorker.register("/firebase-messaging-sw.js").catch(()=>{});
   },[]);
 
